@@ -35,24 +35,25 @@ class QwenEmotion:
             "悲伤": "sad",
             "恐惧": "afraid",
             "反感": "disgusted",
-            # TODO: the "低落" (melancholic) emotion will always be mapped to
-            # "悲伤" (sad) by QwenEmotion's text analysis. it doesn't know the
-            # difference between those emotions even if user writes exact words.
-            # SEE: `self.melancholic_words` for current workaround.
             "低落": "melancholic",
             "惊讶": "surprised",
             "自然": "calm",
         }
         self.desired_vector_order = ["高兴", "愤怒", "悲伤", "恐惧", "反感", "低落", "惊讶", "自然"]
         self.melancholic_words = {
-            # emotion text phrases that will force QwenEmotion's "悲伤" (sad) detection
-            # to become "低落" (melancholic) instead, to fix limitations mentioned above.
             "低落",
             "melancholy",
             "melancholic",
             "depression",
             "depressed",
             "gloomy",
+            "melancolía",
+            "melancólico",
+            "melancólica",
+            "deprimido",
+            "deprimida",
+            "bajón",
+            "nostalgia",
         }
         self.max_score = 1.2
         self.min_score = 0.0
@@ -110,9 +111,6 @@ class QwenEmotion:
             # invalid JSON; fallback to manual string parsing
             content = {m.group(1): float(m.group(2)) for m in re.finditer(r'([^\s":.,]+?)"?\s*:\s*([\d.]+)', content)}
 
-        # workaround for QwenEmotion's inability to distinguish "悲伤" (sad) vs "低落" (melancholic).
-        # if we detect any of the IndexTTS "melancholic" words, we swap those vectors
-        # to encode the "sad" emotion as "melancholic" (instead of sadness).
         text_input_lower = text_input.lower()
         if any(word in text_input_lower for word in self.melancholic_words):
             content["悲伤"], content["低落"] = content.get("低落", 0.0), content.get("悲伤", 0.0)
