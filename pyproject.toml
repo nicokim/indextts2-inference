@@ -2,6 +2,7 @@
 name = "indextts2-inference"
 version = "2.0.1"
 description = "IndexTTS2 inference library: zero-shot text-to-speech with emotional control"
+readme = "README.md"
 authors = [{ name = "Bilibili IndexTTS Team" }]
 license = "LicenseRef-Bilibili-IndexTTS"
 license-files = ["LICEN[CS]E*", "INDEX_MODEL_LICENSE*"]
