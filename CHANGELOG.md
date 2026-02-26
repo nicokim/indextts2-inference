@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.2](https://github.com/nicokim/indextts2-inference/compare/v2.1.1...v2.1.2) (2026-02-26)
+
+
+### Documentation
+
+* add derivative work disclaimer to README ([#14](https://github.com/nicokim/indextts2-inference/issues/14)) ([c1dce6a](https://github.com/nicokim/indextts2-inference/commit/c1dce6a758460c064e3293a149df649d23fda98f))
+
 ## [2.1.1](https://github.com/nicokim/indextts2-inference/compare/v2.1.0...v2.1.1) (2026-02-26)
 
 
