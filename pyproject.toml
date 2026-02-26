@@ -57,5 +57,26 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["indextts"]
 
+[dependency-groups]
+dev = ["ruff>=0.11"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = [
+    "indextts/gpt/",
+    "indextts/s2mel/",
+    "indextts/utils/maskgct*/",
+    "indextts/utils/xtransformers.py",
+    "indextts/accel/",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+ignore = ["E501", "E402"]
+
+[tool.ruff.format]
+quote-style = "double"
+
 [tool.uv]
 no-build-isolation-package = ["deepspeed", "flash-attn"]
