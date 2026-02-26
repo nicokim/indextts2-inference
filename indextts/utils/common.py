@@ -1,5 +1,3 @@
-import os
-import random
 import re
 
 import torch
@@ -18,7 +16,7 @@ def load_audio(audiopath, sampling_rate):
     if sr != sampling_rate:
         try:
             audio = torchaudio.functional.resample(audio, sr, sampling_rate)
-        except Exception as e:
+        except Exception:
             print(f"Warning: {audiopath}, wave shape: {audio.shape}, sample_rate: {sr}")
             return None
     # clip audio invalid values
@@ -74,7 +72,7 @@ def de_tokenized_by_CJK_char(line: str, do_lower_case=False) -> str:
         all_matches = sent_placeholder_pattern.findall(words[i])
         if len(all_matches) > 1:
             # restore the english word
-            for h,j in all_matches:
+            for h, j in all_matches:
                 placeholder_index = int(j)
                 words[i] = words[i].replace(h, english_sents[placeholder_index])
                 if do_lower_case:
