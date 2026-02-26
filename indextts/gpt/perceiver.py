@@ -1,8 +1,5 @@
 # Adapted from https://github.com/lucidrains/naturalspeech2-pytorch/blob/659bec7f7543e7747e809e950cc2f84242fbeec7/naturalspeech2_pytorch/naturalspeech2_pytorch.py#L532
 
-from collections import namedtuple
-from functools import wraps
-
 import torch
 import torch.nn.functional as F
 from einops import rearrange, repeat
@@ -10,26 +7,13 @@ from einops.layers.torch import Rearrange
 from packaging import version
 from torch import einsum, nn
 
+from indextts.logging import get_logger
+
+logger = get_logger(__name__)
+
 
 def exists(val):
     return val is not None
-
-
-def once(fn):
-    called = False
-
-    @wraps(fn)
-    def inner(x):
-        nonlocal called
-        if called:
-            return
-        called = True
-        return fn(x)
-
-    return inner
-
-
-print_once = once(print)
 
 
 # main class
@@ -43,26 +27,9 @@ class Attend(nn.Module):
         self.register_buffer("mask", None, persistent=False)
 
         self.use_flash = use_flash
-        assert not (
-            use_flash and version.parse(torch.__version__) < version.parse("2.0.0")
-        ), "in order to use flash attention, you must be using pytorch 2.0 or above"
-
-        # determine efficient attention configs for cuda and cpu
-        self.config = namedtuple("EfficientAttentionConfig", ["enable_flash", "enable_math", "enable_mem_efficient"])
-        self.cpu_config = self.config(True, True, True)
-        self.cuda_config = None
-
-        if not torch.cuda.is_available() or not use_flash:
-            return
-
-        device_properties = torch.cuda.get_device_properties(torch.device("cuda"))
-
-        if device_properties.major == 8 and device_properties.minor == 0:
-            print_once("A100 GPU detected, using flash attention if input tensor is on cuda")
-            self.cuda_config = self.config(True, False, False)
-        else:
-            print_once("Non-A100 GPU detected, using math or mem efficient attention if input tensor is on cuda")
-            self.cuda_config = self.config(False, True, True)
+        assert not (use_flash and version.parse(torch.__version__) < version.parse("2.0.0")), (
+            "in order to use flash attention, you must be using pytorch 2.0 or above"
+        )
 
     def get_mask(self, n, device):
         if exists(self.mask) and self.mask.shape[-1] >= n:
@@ -73,10 +40,7 @@ class Attend(nn.Module):
         return mask
 
     def flash_attn(self, q, k, v, mask=None):
-        _, heads, q_len, _, k_len, is_cuda = *q.shape, k.shape[-2], q.is_cuda
-
-        # Recommended for multi-query single-key-value attention by Tri Dao
-        # kv shape torch.Size([1, 512, 64]) -> torch.Size([1, 8, 512, 64])
+        _, heads, q_len, _ = q.shape
 
         if k.ndim == 3:
             k = rearrange(k, "b ... -> b 1 ...").expand_as(q)
@@ -84,23 +48,13 @@ class Attend(nn.Module):
         if v.ndim == 3:
             v = rearrange(v, "b ... -> b 1 ...").expand_as(q)
 
-        # Check if mask exists and expand to compatible shape
-        # The mask is B L, so it would have to be expanded to B H N L
-
         if exists(mask):
             mask = rearrange(mask, "b j -> b 1 1 j")
             mask = mask.expand(-1, heads, q_len, -1)
 
-        # Check if there is a compatible device for flash attention
-
-        config = self.cuda_config if is_cuda else self.cpu_config
-
-        # pytorch 2.0 flash attn: q, k, v, mask, dropout, causal, softmax_scale
-
-        with torch.backends.cuda.sdp_kernel(**config._asdict()):
-            out = F.scaled_dot_product_attention(
-                q, k, v, attn_mask=mask, dropout_p=self.dropout if self.training else 0.0, is_causal=self.causal
-            )
+        out = F.scaled_dot_product_attention(
+            q, k, v, attn_mask=mask, dropout_p=self.dropout if self.training else 0.0, is_causal=self.causal
+        )
 
         return out
 
@@ -152,10 +106,6 @@ class Attend(nn.Module):
 
 def Sequential(*mods):
     return nn.Sequential(*filter(exists, mods))
-
-
-def exists(x):
-    return x is not None
 
 
 def default(val, d):

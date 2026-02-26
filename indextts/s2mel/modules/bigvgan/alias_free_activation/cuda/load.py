@@ -93,4 +93,4 @@ def _create_build_dir(buildpath):
         os.mkdir(buildpath)
     except OSError:
         if not os.path.isdir(buildpath):
-            print(f"Creation of the build directory {buildpath} failed")
+            raise OSError(f"Creation of the build directory {buildpath} failed")

@@ -8,7 +8,10 @@ from typing import overload
 
 from sentencepiece import SentencePieceProcessor
 
+from indextts.logging import get_logger
 from indextts.utils.common import de_tokenized_by_CJK_char, tokenize_by_CJK_char
+
+logger = get_logger(__name__)
 
 
 class TextNormalizer:
@@ -150,8 +153,8 @@ class TextNormalizer:
             os.makedirs(cache_dir, exist_ok=True)
             self.es_normalizer = Normalizer(input_case="cased", lang="es", cache_dir=cache_dir)
         except Exception as e:
-            print(f">> Warning: failed to load Spanish normalizer: {e}")
-            print(">> Install with: pip install 'index-tts-inference[es]'")
+            logger.warning("Failed to load Spanish normalizer: %s", e)
+            logger.warning("Install with: pip install 'index-tts-inference[es]'")
 
     def normalize_spanish(self, text: str) -> str:
         if not text:
@@ -166,7 +169,7 @@ class TextNormalizer:
             try:
                 text = self.es_normalizer.normalize(text, verbose=False)
             except Exception:
-                print(traceback.format_exc())
+                logger.warning("Spanish normalization error:\n%s", traceback.format_exc())
         pattern = re.compile("|".join(re.escape(p) for p in self.char_rep_map.keys()))
         text = pattern.sub(lambda x: self.char_rep_map[x.group()], text)
         return text
@@ -175,7 +178,7 @@ class TextNormalizer:
         if self.preferred_language == "es":
             return self.normalize_spanish(text)
         if not self.zh_normalizer or not self.en_normalizer:
-            print("Error, text normalizer is not initialized !!!")
+            logger.warning("Text normalizer is not initialized!")
             return ""
         if self.use_chinese(text):
             text = re.sub(TextNormalizer.ENGLISH_CONTRACTION_PATTERN, r"\1 is", text, flags=re.IGNORECASE)
@@ -191,7 +194,7 @@ class TextNormalizer:
                 result = self.zh_normalizer.normalize(replaced_text)
             except Exception:
                 result = ""
-                print(traceback.format_exc())
+                logger.warning("Chinese normalization error:\n%s", traceback.format_exc())
             # 恢复人名
             result = self.restore_names(result, original_name_list)
             # 恢复拼音声调
@@ -213,7 +216,7 @@ class TextNormalizer:
                 result = self.restore_tech_terms(result, tech_list)
             except Exception:
                 result = text
-                print(traceback.format_exc())
+                logger.warning("English normalization error:\n%s", traceback.format_exc())
             pattern = re.compile("|".join(re.escape(p) for p in self.char_rep_map.keys()))
             result = pattern.sub(lambda x: self.char_rep_map[x.group()], result)
         return result
@@ -413,8 +416,6 @@ class TextNormalizer:
             number = chr(ord("a") + i)
             transformed_text = transformed_text.replace(pinyin, f"<pinyin_{number}>")
 
-        # print("original_text: ", original_text)
-        # print("transformed_text: ", transformed_text)
         return transformed_text, original_pinyin_list
 
     def restore_pinyin_tones(self, normalized_text, original_pinyin_list):
@@ -431,8 +432,6 @@ class TextNormalizer:
             number = chr(ord("a") + i)
             pinyin = self.correct_pinyin(pinyin)
             transformed_text = transformed_text.replace(f"<pinyin_{number}>", pinyin)
-        # print("normalized_text: ", normalized_text)
-        # print("transformed_text: ", transformed_text)
         return transformed_text
 
 
@@ -659,115 +658,3 @@ class TextTokenizer:
             max_text_tokens_per_segment=max_text_tokens_per_segment,
             quick_streaming_tokens=quick_streaming_tokens,
         )
-
-
-if __name__ == "__main__":
-    # 测试程序
-
-    text_normalizer = TextNormalizer(enable_glossary=True)
-
-    cases = [
-        "IndexTTS 正式发布1.0版本了，效果666",
-        "晕XUAN4是一种GAN3觉",
-        "我爱你！",
-        "I love you!",
-        "“我爱你”的英语是“I love you”",
-        "2.5平方电线",
-        "共465篇，约315万字",
-        "2002年的第一场雪，下在了2003年",
-        "速度是10km/h",
-        "现在是北京时间2025年01月11日 20:00",
-        "他这条裤子是2012年买的，花了200块钱",
-        "电话：135-4567-8900",
-        "1键3连",
-        "他这条视频点赞3000+，评论1000+，收藏500+",
-        "这是1024元的手机，你要吗？",
-        "受不liao3你了",
-        "“衣裳”不读衣chang2，而是读衣shang5",
-        "最zhong4要的是：不要chong2蹈覆辙",
-        "不zuo1死就不会死",
-        "See you at 8:00 AM",
-        "8:00 AM 开会",
-        "Couting down 3, 2, 1, go!",
-        "数到3就开始：1、2、3",
-        "This sales for 2.5% off, only $12.5.",
-        "5G网络是4G网络的升级版，2G网络是3G网络的前身",
-        "苹果于2030/1/2发布新 iPhone 2X 系列手机，最低售价仅 ¥12999",
-        "这酒...里...有毒...",
-        # 异常case
-        "只有,,,才是最好的",
-        "babala2是什么？",  # babala二是什么?
-        "用beta1测试",  # 用beta一测试
-        "have you ever been to beta2?",  # have you ever been to beta two?
-        "where's the money?",  # where is the money?
-        "who's there?",  # who is there?
-        "which's the best?",  # which is the best?
-        "how's it going?",  # how is it going?
-        "今天是个好日子 it's a good day",  # 今天是个好日子 it is a good day
-        # 术语
-        "such as XTTS, CosyVoice2, Fish-Speech, and F5-TTS",  # such as xtts,cosyvoice two,fish-speech,and f five-tts
-        "GPT-5-Nano is the smallest and fastest variant in the GPT-5 model family.",  # GPT-five-Nano is the smallest and fastest variant in the GPT-five model family
-        "GPT-5-Nano 是 GPT-5 模型家族中最小且速度最快的变体",  # GPT-五-Nano 是 GPT-五 系统中最小且速度最快的变体
-        "2025/09/08 IndexTTS-2 全球发布",  # 二零二五年九月八日 IndexTTS-二全球发布
-        "Here are some highly-rated M.2 NVMe SSDs: Samsung 9100 PRO PCIe 5.0 SSD M.2, $139.99",  # Here are some highly-rated M dot two NVMe SSD's, Samsung nine thousand one hundred PRO PCIE five SSD M dot two . one hundred and thirty nine dollars and ninety nine cents
-        "we dive deep into the showdown between DisplayPort 1.4 and HDMI 2.1 to determine which is the best choice for gaming enthusiasts",
-        # 人名
-        "约瑟夫·高登-莱维特（Joseph Gordon-Levitt is an American actor）",
-        "蒂莫西·唐纳德·库克（英文名：Timothy Donald Cook），通称蒂姆·库克（Tim Cook），美国商业经理、工业工程师和工业开发商，现任苹果公司首席执行官。",
-        # 长句子
-        "《盗梦空间》是由美国华纳兄弟影片公司出品的电影，由克里斯托弗·诺兰执导并编剧，莱昂纳多·迪卡普里奥、玛丽昂·歌迪亚、约瑟夫·高登-莱维特、艾利奥特·佩吉、汤姆·哈迪等联袂主演，2010年7月16日在美国上映，2010年9月1日在中国内地上映，2020年8月28日在中国内地重映。影片剧情游走于梦境与现实之间，被定义为“发生在意识结构内的当代动作科幻片”，讲述了由莱昂纳多·迪卡普里奥扮演的造梦师，带领特工团队进入他人梦境，从他人的潜意识中盗取机密，并重塑他人梦境的故事。",
-        "清晨拉开窗帘，阳光洒在窗台的Bloomixy花艺礼盒上——薰衣草香薰蜡烛唤醒嗅觉，永生花束折射出晨露般光泽。设计师将“自然绽放美学”融入每个细节：手工陶瓷花瓶可作首饰收纳，香薰精油含依兰依兰舒缓配方。限量款附赠《365天插花灵感手册》，让每个平凡日子都有花开仪式感。\n宴会厅灯光暗下的刹那，Glimmeria星月系列耳坠开始发光——瑞士冷珐琅工艺让蓝宝石如银河流动，钛合金骨架仅3.2g无负重感。设计师秘密：内置微型重力感应器，随步伐产生0.01mm振幅，打造“行走的星光”。七夕限定礼盒含星座定制铭牌，让爱意如星辰永恒闪耀。",
-        "电影1：“黑暗骑士”（演员：克里斯蒂安·贝尔、希斯·莱杰；导演：克里斯托弗·诺兰）；电影2：“盗梦空间”（演员：莱昂纳多·迪卡普里奥；导演：克里斯托弗·诺兰）；电影3：“钢琴家”（演员：艾德里安·布洛迪；导演：罗曼·波兰斯基）；电影4：“泰坦尼克号”（演员：莱昂纳多·迪卡普里奥；导演：詹姆斯·卡梅隆）；电影5：“阿凡达”（演员：萨姆·沃辛顿；导演：詹姆斯·卡梅隆）；电影6：“南方公园：大电影”（演员：马特·斯通、托马斯·艾恩格瑞；导演：特雷·帕克）",
-    ]
-    # 测试分词器
-    tokenizer = TextTokenizer(
-        vocab_file="checkpoints/bpe.model",
-        normalizer=text_normalizer,
-    )
-
-    codes = tokenizer.batch_encode(
-        cases,
-        out_type=int,
-    )
-
-    print(f"vocab_size: {tokenizer.vocab_size}")
-    # print(f"pad_token: {tokenizer.pad_token}, pad_token_id: {tokenizer.pad_token_id}")
-    print(f"bos_token: {tokenizer.bos_token}, bos_token_id: {tokenizer.bos_token_id}")
-    print(f"eos_token: {tokenizer.eos_token}, eos_token_id: {tokenizer.eos_token_id}")
-    print(f"unk_token: {tokenizer.unk_token}, unk_token_id: {tokenizer.unk_token_id}")
-    # 测试拼音 (8474-10201)
-    for id in range(8474, 10201):
-        pinyin = tokenizer.convert_ids_to_tokens(id)
-        if re.match(TextNormalizer.PINYIN_TONE_PATTERN, pinyin, re.IGNORECASE) is None:
-            print(f"{pinyin} should be matched")
-    for badcase in ["beta1", "better1", "voice2", "bala2", "babala2", "hunger2"]:
-        if re.match(TextNormalizer.PINYIN_TONE_PATTERN, badcase, re.IGNORECASE) is not None:
-            print(f"{badcase} should not be matched!")
-    # 不应该有 unk_token_id
-    for t in set([*TextTokenizer.punctuation_marks_tokens, ",", "▁,", "-", "▁..."]):
-        tokens = tokenizer.convert_tokens_to_ids(t)
-        if tokenizer.unk_token_id in tokens:
-            print(f"Warning: {t} is unknown token")
-        print(f"`{t}`", "->", tokens, "->", tokenizer.convert_ids_to_tokens(tokens))
-    for ch in set(tokenizer.normalizer.zh_char_rep_map.values()):
-        # 测试 normalize后的字符能被分词器识别
-        print(f"`{ch}`", "->", tokenizer.sp_model.Encode(ch, out_type=str))
-        print(f"` {ch}`", "->", tokenizer.sp_model.Encode(f" {ch}", out_type=str))
-    max_text_tokens_per_segment = 120
-    for i in range(len(cases)):
-        print(f"原始文本: {cases[i]}")
-        print(f"Normalized: {text_normalizer.normalize(cases[i])}")
-        tokens = tokenizer.tokenize(cases[i])
-        print("Tokenzied: ", ", ".join([f"`{t}`" for t in tokens]))
-        segments = tokenizer.split_segments(tokens, max_text_tokens_per_segment=max_text_tokens_per_segment)
-        print("Segments count:", len(segments))
-        if len(segments) > 1:
-            for j in range(len(segments)):
-                print(f"  {j}, count:", len(segments[j]), ", tokens:", "".join(segments[j]))
-                if len(segments[j]) > max_text_tokens_per_segment:
-                    print(f"Warning: segment {j} is too long, length: {len(segments[j])}")
-        # print(f"Token IDs (first 10): {codes[i][:10]}")
-        if tokenizer.unk_token in codes[i]:
-            print(f"Warning: `{cases[i]}` contains UNKNOWN token")
-        print(f"Decoded: {tokenizer.decode(codes[i], do_lower_case=True)}")
-        print("-" * 50)

@@ -1,26 +1,38 @@
 # index-tts-inference
 
+[![CI](https://github.com/nicokim/indextts2-inference/actions/workflows/ci.yml/badge.svg)](https://github.com/nicokim/indextts2-inference/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/indextts2-inference)](https://pypi.org/project/indextts2-inference/)
+
 Minimal pip package for IndexTTS2 inference. Wraps the official [IndexTTS2](https://github.com/index-tts/index-tts) repo, stripped down to only what's needed for inference.
 
 ## Install
 
 ```bash
-pip install index-tts-inference
+pip install indextts2-inference
 ```
 
 ### Optional extras
 
-**Flash Attention** (faster inference on CUDA):
+**Spanish support** (nemo text processing):
 ```bash
-pip install index-tts-inference[flash-attn]
+pip install indextts2-inference[es]
+```
+
+**SageAttention** (alternative attention backend):
+```bash
+pip install indextts2-inference[sage-attn]
+```
+
+**Flash Attention v2** (acceleration engine with KV cache and CUDA graphs):
+```bash
+pip install indextts2-inference[flash-attn]
 ```
 
 **DeepSpeed**:
 ```bash
-pip install index-tts-inference[deepspeed]
+pip install indextts2-inference[deepspeed]
 ```
 
-> Note: Both `flash-attn` and `deepspeed` require build from source and need CUDA toolkit installed.
 
 ## Usage
 
@@ -35,11 +47,97 @@ tts = IndexTTS2(model_dir="/path/to/checkpoints")
 
 # Basic inference
 tts.infer(spk_audio_prompt="voice.wav", text="Hello world", output_path="out.wav")
+```
 
-# Streaming
-for chunk in tts.infer(spk_audio_prompt="voice.wav", text="Hello", output_path="out.wav", stream_return=True):
+### Attention backends
+
+```python
+# Default PyTorch SDPA — auto-selects best kernel, no extra deps needed
+tts = IndexTTS2()
+
+# SageAttention — may help on Ampere/Hopper GPUs, requires sageattention package
+tts = IndexTTS2(attn_backend="sage", use_fp16=True)
+
+# Flash Attention v2 — acceleration engine with paged KV cache and CUDA graphs
+tts = IndexTTS2(attn_backend="flash")
+```
+
+### Language selection
+
+By default the language is auto-detected between Chinese and English. For Spanish, set it explicitly:
+
+```python
+tts = IndexTTS2(language="es")
+tts.infer(spk_audio_prompt="voice.wav", text="Hola, esto es una prueba.", output_path="out.wav")
+```
+
+### Emotion control
+
+There are three ways to control the emotion of the generated speech:
+
+```python
+# 1. From a reference audio
+tts.infer(
+    spk_audio_prompt="speaker.wav",
+    text="Some text",
+    output_path="out.wav",
+    emo_audio_prompt="happy_reference.wav",
+    emo_alpha=0.7,
+)
+
+# 2. With an explicit emotion vector
+#    [happy, angry, sad, afraid, disgusted, melancholic, surprised, calm]
+tts.infer(
+    spk_audio_prompt="speaker.wav",
+    text="I am very happy!",
+    output_path="out.wav",
+    emo_vector=[0.8, 0, 0, 0, 0, 0, 0, 0],
+)
+
+# 3. Auto-detect emotion from the text itself
+tts.infer(
+    spk_audio_prompt="speaker.wav",
+    text="I am very happy!",
+    output_path="out.wav",
+    use_emo_text=True,
+)
+```
+
+### Streaming
+
+```python
+for chunk in tts.infer(
+    spk_audio_prompt="voice.wav",
+    text="Long text to synthesize...",
+    output_path="out.wav",
+    stream_return=True,
+):
     if chunk is not None and hasattr(chunk, "shape"):
         audio_np = chunk.squeeze().cpu().numpy()
+```
+
+### Generation parameters
+
+You can tune sampling parameters via kwargs:
+
+```python
+tts.infer(
+    spk_audio_prompt="voice.wav",
+    text="Hello",
+    output_path="out.wav",
+    temperature=0.6,
+    top_k=20,
+    top_p=0.8,
+    max_mel_tokens=2000,
+)
+```
+
+## Logging
+
+By default, `index-tts-inference` only shows warnings. To see detailed logs:
+
+```bash
+export INDEXTTS_LOG_LEVEL=DEBUG  # DEBUG, INFO, WARNING (default)
 ```
 
 ## PyTorch with CUDA
@@ -51,7 +149,7 @@ This package lists `torch` and `torchaudio` as dependencies without pinning a sp
 pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
 
 # Then install the package
-pip install index-tts-inference
+pip install indextts2-inference
 ```
 
 Or with uv:
