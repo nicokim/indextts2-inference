@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.2](https://github.com/nicokim/indextts2-inference/compare/v2.0.1...v2.0.2) (2026-02-26)
+
+
+### Bug Fixes
+
+* add readme field to pyproject.toml for PyPI description ([#8](https://github.com/nicokim/indextts2-inference/issues/8)) ([d9d39d5](https://github.com/nicokim/indextts2-inference/commit/d9d39d5caf340e4e6de16c60f4ab252cde01eb39))
+
 ## [2.0.1](https://github.com/nicokim/indextts2-inference/compare/v2.0.0...v2.0.1) (2026-02-26)
 
 
