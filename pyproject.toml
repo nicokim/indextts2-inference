@@ -41,7 +41,6 @@ dependencies = [
 
 [project.optional-dependencies]
 es = [
-  "pynini>=2.1.7",
   "nemo-text-processing>=1.1",
 ]
 flash-attn = [
@@ -85,3 +84,4 @@ quote-style = "double"
 
 [tool.uv]
 no-build-isolation-package = ["deepspeed", "flash-attn", "pynini"]
+override-dependencies = ["pynini>=2.1.7"]

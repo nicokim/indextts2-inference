@@ -17,6 +17,9 @@ resolution-markers = [
     "python_full_version < '3.11'",
 ]
 
+[manifest]
+overrides = [{ name = "pynini", specifier = ">=2.1.7" }]
+
 [[package]]
 name = "accelerate"
 version = "1.12.0"
@@ -821,6 +824,9 @@ es = [
 flash-attn = [
     { name = "flash-attn" },
 ]
+sage-attn = [
+    { name = "sageattention" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -847,6 +853,7 @@ requires-dist = [
     { name = "nemo-text-processing", marker = "extra == 'es'", specifier = ">=1.1" },
     { name = "omegaconf", specifier = ">=2.3" },
     { name = "safetensors", specifier = ">=0.4" },
+    { name = "sageattention", marker = "extra == 'sage-attn'", specifier = ">=1.0" },
     { name = "sentencepiece", specifier = ">=0.2" },
     { name = "tokenizers", specifier = ">=0.19" },
     { name = "torch", specifier = ">=2.0" },
@@ -856,7 +863,7 @@ requires-dist = [
     { name = "transformers", specifier = ">=5.0" },
     { name = "wetext", specifier = ">=0.0.9" },
 ]
-provides-extras = ["es", "flash-attn", "deepspeed"]
+provides-extras = ["es", "flash-attn", "sage-attn", "deepspeed"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "ruff", specifier = ">=0.11" }]
@@ -2078,15 +2085,19 @@ wheels = [
 
 [[package]]
 name = "pynini"
-version = "2.1.6.post1"
+version = "2.1.7"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/b8/79/06049a733359a2da244c21a88df90828cf27eb0f7947ebb8b00653c7e93c/pynini-2.1.6.post1.tar.gz", hash = "sha256:d831ab53abb22c862fb56471b12edf26e77d2b02d1956f45f0259e6402493084", size = 790361, upload-time = "2024-07-18T22:05:13.037Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c6/b6/09a0efe843df37d9c80a9a1c190c7bb28d8920cee401e2a61c46f1328ec1/pynini-2.1.7.tar.gz", hash = "sha256:fc06cc02adcbd4b14eb94ae9f2a0949d110612d2d4ee3a7ac5dc97b45fff8e33", size = 789771, upload-time = "2025-09-04T22:15:39.628Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ad/3a/bf7d70e896d3099999c0350c5deb4c7d404738f34b422ddb1481321009b2/pynini-2.1.6.post1-cp310-cp310-manylinux_2_28_x86_64.whl", hash = "sha256:10f0717fc6bf09330c41978e4d958a000b790b9b344cbc1117d33b008edf4fde", size = 154542089, upload-time = "2024-07-18T22:05:38.811Z" },
-    { url = "https://files.pythonhosted.org/packages/b2/59/5c2499971384041aa9a2ad16c02c5d70f6802d49cac08e234f265cd1bc67/pynini-2.1.6.post1-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:957a8b0d7b27a6c7ac15aae1e0e384d92e3ea2ef4e673188a8ccb92a3224e895", size = 154760801, upload-time = "2024-07-18T22:05:47.569Z" },
-    { url = "https://files.pythonhosted.org/packages/62/cf/67f560932cbb12a0d7d69e14ed08e83e0ee1ca0ea1c019e486b21048e9b7/pynini-2.1.6.post1-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:ca567a454fefa7c9bf5180d4d9b4cb5d62f9f99fa326554076fe2a945dc2f776", size = 154687038, upload-time = "2024-07-18T22:05:56.311Z" },
-    { url = "https://files.pythonhosted.org/packages/1e/05/7b2fd6fcaa33362e1bc99cf371273d1500e4b105c9f26ad0c65a43c68551/pynini-2.1.6.post1-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:afcbcd23eaed541c5619c47b20031055af7ded44980fe96c7e6d939fac81b91f", size = 154685970, upload-time = "2024-07-18T22:06:04.73Z" },
-    { url = "https://files.pythonhosted.org/packages/e2/23/6a487e8de16b151f5b9bfbd15d5b7969976d8bc5e79eaba8a33513dda6d8/pynini-2.1.6.post1-pp310-pypy310_pp73-manylinux_2_28_x86_64.whl", hash = "sha256:a5a38e074b9eaf7aa08c1cd286d5b7990ef9ccc28f4e5e8d31f09ba10729431d", size = 98750903, upload-time = "2024-07-18T22:06:25.975Z" },
+    { url = "https://files.pythonhosted.org/packages/b0/20/fd233d658ce68b335ba6387dbc9497288c00b13d1bd54f47156bf785948d/pynini-2.1.7-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:644f75b67a591f668b26318b6d98514a85be5264b4117f50f358901e4513c901", size = 165420949, upload-time = "2025-09-04T22:05:41.092Z" },
+    { url = "https://files.pythonhosted.org/packages/62/4b/d3a90b0355e28bcd28e4377b9d2b536884de9ae9aa74a78886971467a8dd/pynini-2.1.7-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:d078331bf24d2f46d3ff8940f558b88ce059ad72a37c0019b0411b03a136d986", size = 165557802, upload-time = "2025-09-04T22:05:48.195Z" },
+    { url = "https://files.pythonhosted.org/packages/ef/16/8624f73412f4571517dc97e027c6b73db849c7c649aad70aa2dd168834a1/pynini-2.1.7-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:574985fb1cae220ac96caa30476d764fe6d8991cc4f378d83e276591118eb10a", size = 165508989, upload-time = "2025-09-04T22:05:54.495Z" },
+    { url = "https://files.pythonhosted.org/packages/a9/9b/dcbf23733cd57a86dc4aa425aba2a4efff301acf152e50065c232449ade6/pynini-2.1.7-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:764ae36dd9f3480e88c4d4046d108a74c4923510d0aa93062debfe1f742b356f", size = 165495070, upload-time = "2025-09-04T22:06:00.483Z" },
+    { url = "https://files.pythonhosted.org/packages/88/c2/d47eae721b2ac558d72c61250ee64918cff453e40d5c02db53ec21983ef9/pynini-2.1.7-cp313-cp313t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:a7e59fc8ac5eed9234f9d394e882bd7048808590e15abcce5ce03662b8e5ea79", size = 165409045, upload-time = "2025-09-04T22:06:08.351Z" },
+    { url = "https://files.pythonhosted.org/packages/27/23/74fb65f0cdd345b8b186f80a3bdd318e93906b572cd82721a16bee9b1eaa/pynini-2.1.7-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:aaf2171cf5d744961d1080a680f1725807b4d179588a6ad3135596c2e0e06bc0", size = 165463702, upload-time = "2025-09-04T22:06:17.204Z" },
+    { url = "https://files.pythonhosted.org/packages/61/41/fd9c867fbe1a9141ea57a59e6a8b087ba88f19e97bd46b39dcf77ed00ecb/pynini-2.1.7-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:2bb5de3d52056a228dd48a6d027fc279f0c94a11f28bc43b79c43a1624ec032d", size = 165404717, upload-time = "2025-09-04T22:06:23.494Z" },
+    { url = "https://files.pythonhosted.org/packages/a1/e5/3b37743563f9b63101de6cf7c66bb895767f38dc47970ec9545a60740693/pynini-2.1.7-pp310-pypy310_pp73-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:64403cb3fe1ca265a74688ba35fb294ed38eb8c7645c109e24225befcf9b0dee", size = 100613739, upload-time = "2025-09-04T22:06:34.979Z" },
+    { url = "https://files.pythonhosted.org/packages/5e/19/3a97b5eb33ea23e8e918957ddffd2c5d08582a7aef0abdd9fcdaba3143b1/pynini-2.1.7-pp311-pypy311_pp73-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:9ac00901ad876f684dc7d3f57057545e9a064149f3e87ff2dd08b38ab1dc0f90", size = 100623057, upload-time = "2025-09-04T22:06:39.644Z" },
 ]
 
 [[package]]
@@ -2419,6 +2430,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/dd/29/59ed8152b30f72c42d00d241e58eaca558ae9dbfa5695206e2e0f54c7063/safetensors-0.7.0-pp310-pypy310_pp73-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:12f49080303fa6bb424b362149a12949dfbbf1e06811a88f2307276b0c131afd", size = 503977, upload-time = "2025-11-19T15:18:17.523Z" },
     { url = "https://files.pythonhosted.org/packages/d3/0b/4811bfec67fa260e791369b16dab105e4bae82686120554cc484064e22b4/safetensors-0.7.0-pp310-pypy310_pp73-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:0071bffba4150c2f46cae1432d31995d77acfd9f8db598b5d1a2ce67e8440ad2", size = 623890, upload-time = "2025-11-19T15:18:22.666Z" },
     { url = "https://files.pythonhosted.org/packages/58/5b/632a58724221ef03d78ab65062e82a1010e1bef8e8e0b9d7c6d7b8044841/safetensors-0.7.0-pp310-pypy310_pp73-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:473b32699f4200e69801bf5abf93f1a4ecd432a70984df164fc22ccf39c4a6f3", size = 531885, upload-time = "2025-11-19T15:18:27.146Z" },
+]
+
+[[package]]
+name = "sageattention"
+version = "1.0.6"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a5/c9/0445157fd09c8e5722503588db2a25afe9ab362d927b344dbbe7ee3ce84b/sageattention-1.0.6.tar.gz", hash = "sha256:b0398a5877222ee1abaeccd27d1029309c8b57994794a11c1278e0bfd176512c", size = 12611, upload-time = "2024-11-20T13:30:41.346Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/53/06/f7b47adb766bcb38b3f88763374a3e8dffea05ee9b556bc24dbcbd60fd29/sageattention-1.0.6-py3-none-any.whl", hash = "sha256:fafc66569bed62a16839e820c2612141b5a20accf55b876d941bab9c0ac5d888", size = 20105, upload-time = "2024-11-20T13:30:39.544Z" },
 ]
 
 [[package]]
