@@ -1,7 +1,6 @@
 import os
 from subprocess import CalledProcessError
 
-os.environ['HF_HUB_CACHE'] = './checkpoints/hf_cache'
 import json
 import re
 import time
@@ -27,30 +26,38 @@ from indextts.s2mel.modules.bigvgan import bigvgan
 from indextts.s2mel.modules.campplus.DTDNN import CAMPPlus
 from indextts.s2mel.modules.audio import mel_spectrogram
 
-from transformers import AutoTokenizer
-from modelscope import AutoModelForCausalLM
-from huggingface_hub import hf_hub_download
+from transformers import AutoTokenizer, AutoModelForCausalLM
+from huggingface_hub import hf_hub_download, snapshot_download
 import safetensors
 from transformers import SeamlessM4TFeatureExtractor
 import random
 import torch.nn.functional as F
 
+DEFAULT_HF_REPO = "IndexTeam/IndexTTS-2"
+
 class IndexTTS2:
     def __init__(
-            self, cfg_path="checkpoints/config.yaml", model_dir="checkpoints", use_fp16=False, device=None,
-            use_cuda_kernel=None,use_deepspeed=False, use_accel=False, use_torch_compile=False
+            self, model_dir=None, cfg_path=None, use_fp16=False, device=None,
+            use_cuda_kernel=None, use_deepspeed=False, use_accel=False, use_torch_compile=False,
+            language=None
     ):
         """
         Args:
-            cfg_path (str): path to the config file.
-            model_dir (str): path to the model directory.
+            model_dir (str | None): path to the model directory. If None, auto-downloads from HuggingFace.
+            cfg_path (str | None): path to the config file. If None, uses model_dir/config.yaml.
             use_fp16 (bool): whether to use fp16.
             device (str): device to use (e.g., 'cuda:0', 'cpu'). If None, it will be set automatically based on the availability of CUDA or MPS.
             use_cuda_kernel (None | bool): whether to use BigVGan custom fused activation CUDA kernel, only for CUDA device.
             use_deepspeed (bool): whether to use DeepSpeed or not.
             use_accel (bool): whether to use acceleration engine for GPT2 or not.
             use_torch_compile (bool): whether to use torch.compile for optimization or not.
+            language (str | None): language for text normalization ('es', 'zh', 'en'). If None, auto-detects between Chinese and English.
         """
+        if model_dir is None:
+            model_dir = snapshot_download(DEFAULT_HF_REPO)
+        if cfg_path is None:
+            cfg_path = os.path.join(model_dir, "config.yaml")
+
         if device is not None:
             self.device = device
             self.use_fp16 = False if device == "cpu" else use_fp16
@@ -167,9 +174,9 @@ class IndexTTS2:
         print(">> bigvgan weights restored from:", bigvgan_name)
 
         self.bpe_path = os.path.join(self.model_dir, self.cfg.dataset["bpe_model"])
-        self.normalizer = TextNormalizer(enable_glossary=True)
+        self.normalizer = TextNormalizer(enable_glossary=True, preferred_language=language)
         self.normalizer.load()
-        print(">> TextNormalizer loaded")
+        print(f">> TextNormalizer loaded (language={language or 'auto'})")
         self.tokenizer = TextTokenizer(self.bpe_path, self.normalizer)
         print(">> bpe model loaded from:", self.bpe_path)
 
@@ -661,11 +668,10 @@ class IndexTTS2:
                     bigvgan_time += time.perf_counter() - m_start_time
                     wav = wav.squeeze(1)
 
-                wav = torch.clamp(32767 * wav, -32767.0, 32767.0)
+                wav = torch.clamp(wav, -1.0, 1.0)
                 if verbose:
                     print(f"wav shape: {wav.shape}", "min:", wav.min(), "max:", wav.max())
-                # wavs.append(wav[:, :-512])
-                wavs.append(wav.cpu())  # to cpu before saving
+                wavs.append(wav.cpu())
                 if stream_return:
                     yield wav.cpu()
                     if silence == None:
@@ -694,7 +700,7 @@ class IndexTTS2:
                 print(">> remove old wav file:", output_path)
             if os.path.dirname(output_path) != "":
                 os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            torchaudio.save(output_path, wav.type(torch.int16), sampling_rate)
+            torchaudio.save(output_path, wav.float(), sampling_rate, bits_per_sample=16)
             print(">> wav file saved to:", output_path)
             if stream_return:
                 return None
@@ -703,7 +709,7 @@ class IndexTTS2:
             if stream_return:
                 return None
             # 返回以符合Gradio的格式要求
-            wav_data = wav.type(torch.int16)
+            wav_data = (wav.float() * 32767).clamp(-32767, 32767).to(torch.int16)
             wav_data = wav_data.numpy().T
             yield (sampling_rate, wav_data)
 

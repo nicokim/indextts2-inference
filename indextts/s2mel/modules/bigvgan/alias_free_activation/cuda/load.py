@@ -15,12 +15,24 @@ os.environ["TORCH_CUDA_ARCH_LIST"] = ""
 
 
 def load():
-    # Check if cuda 11 is installed for compute capability 8.0
-    cc_flag = []
-    _, bare_metal_major, _ = _get_cuda_bare_metal_version(cpp_extension.CUDA_HOME)
-    if int(bare_metal_major) >= 11:
-        cc_flag.append("-gencode")
-        cc_flag.append("arch=compute_80,code=sm_80")
+    import torch
+
+    # Detect GPU compute capability and build for it
+    cc_flags = []
+    if torch.cuda.is_available():
+        for i in range(torch.cuda.device_count()):
+            major, minor = torch.cuda.get_device_capability(i)
+            arch = f"arch=compute_{major}{minor},code=sm_{major}{minor}"
+            flag_pair = ["-gencode", arch]
+            if flag_pair not in cc_flags:
+                cc_flags.extend(flag_pair)
+
+    # Fallback: add sm_70 and sm_80 if no GPU detected
+    if not cc_flags:
+        _, bare_metal_major, _ = _get_cuda_bare_metal_version(cpp_extension.CUDA_HOME)
+        cc_flags.extend(["-gencode", "arch=compute_70,code=sm_70"])
+        if int(bare_metal_major) >= 11:
+            cc_flags.extend(["-gencode", "arch=compute_80,code=sm_80"])
 
     # Build path
     srcpath = pathlib.Path(__file__).parent.absolute()
@@ -38,12 +50,10 @@ def load():
             ],
             extra_cuda_cflags=[
                 "-O3",
-                "-gencode",
-                "arch=compute_70,code=sm_70",
                 "--use_fast_math",
             ]
             + extra_cuda_flags
-            + cc_flag,
+            + cc_flags,
             verbose=True,
         )
 

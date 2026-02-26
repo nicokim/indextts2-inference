@@ -3,6 +3,7 @@ from functools import lru_cache
 import os
 import traceback
 import re
+import unicodedata
 from typing import List, Union, overload
 import warnings
 from indextts.utils.common import tokenize_by_CJK_char, de_tokenized_by_CJK_char
@@ -10,9 +11,11 @@ from sentencepiece import SentencePieceProcessor
 
 
 class TextNormalizer:
-    def __init__(self, enable_glossary=False):
+    def __init__(self, enable_glossary=False, preferred_language: str | None = None):
         self.zh_normalizer = None
         self.en_normalizer = None
+        self.es_normalizer = None
+        self.preferred_language = preferred_language.lower() if preferred_language else None
         self.char_rep_map = {
             "：": ",",
             "；": ",",
@@ -113,20 +116,14 @@ class TextNormalizer:
         return has_pinyin
 
     def load(self):
-        # print(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-        # sys.path.append(model_dir)
-        import platform
+        if self.preferred_language == "es":
+            self.load_es()
+            return
         if self.zh_normalizer is not None and self.en_normalizer is not None:
             return
-        if platform.system() != "Linux":  # Mac and Windows
-            from wetext import Normalizer
-
-            self.zh_normalizer = Normalizer(remove_erhua=False, lang="zh", operator="tn")
-            self.en_normalizer = Normalizer(lang="en", operator="tn")
-        else:
+        try:
             from tn.chinese.normalizer import Normalizer as NormalizerZh
             from tn.english.normalizer import Normalizer as NormalizerEn
-            # use new cache dir for build tagger rules with disable remove_interjections and remove_erhua
             cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tagger_cache")
             if not os.path.exists(cache_dir):
                 os.makedirs(cache_dir)
@@ -136,8 +133,46 @@ class TextNormalizer:
                 cache_dir=cache_dir, remove_interjections=False, remove_erhua=False, overwrite_cache=False
             )
             self.en_normalizer = NormalizerEn(overwrite_cache=False)
+        except ImportError:
+            from wetext import Normalizer
+            self.zh_normalizer = Normalizer(remove_erhua=False, lang="zh", operator="tn")
+            self.en_normalizer = Normalizer(lang="en", operator="tn")
+
+    def load_es(self):
+        if self.es_normalizer is not None:
+            return
+        try:
+            from nemo_text_processing.text_normalization.normalize import Normalizer
+            cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "nemo_es_cache")
+            os.makedirs(cache_dir, exist_ok=True)
+            self.es_normalizer = Normalizer(
+                input_case="cased", lang="es", cache_dir=cache_dir
+            )
+        except Exception as e:
+            print(f">> Warning: failed to load Spanish normalizer: {e}")
+            print(">> Install with: pip install 'index-tts-inference[es]'")
+
+    def normalize_spanish(self, text: str) -> str:
+        if not text:
+            return ""
+        text = unicodedata.normalize("NFKC", text)
+        text = re.sub(r"\s+", " ", text).strip()
+        if not text:
+            return ""
+        if self.es_normalizer is None:
+            self.load_es()
+        if self.es_normalizer is not None:
+            try:
+                text = self.es_normalizer.normalize(text, verbose=False)
+            except Exception:
+                print(traceback.format_exc())
+        pattern = re.compile("|".join(re.escape(p) for p in self.char_rep_map.keys()))
+        text = pattern.sub(lambda x: self.char_rep_map[x.group()], text)
+        return text
 
     def normalize(self, text: str) -> str:
+        if self.preferred_language == "es":
+            return self.normalize_spanish(text)
         if not self.zh_normalizer or not self.en_normalizer:
             print("Error, text normalizer is not initialized !!!")
             return ""

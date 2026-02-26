@@ -29,3 +29,13 @@ desktop.ini
 /checkpoints/*
 !/checkpoints/*.yaml
 /outputs/
+
+# Test outputs.
+test_*.wav
+
+# CUDA kernel build artifacts.
+indextts/s2mel/modules/bigvgan/alias_free_activation/cuda/build/
+
+# NeMo cache.
+indextts/utils/nemo_es_cache/
+indextts/utils/tagger_cache/
