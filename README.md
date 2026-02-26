@@ -162,4 +162,6 @@ explicit = true
 
 ## License
 
+This package is a derivative work of [IndexTTS2](https://github.com/index-tts/index-tts) by Bilibili. Any modifications made to the original model in this derivative work are not endorsed, warranted, or guaranteed by the original right-holder of the original model, and the original right-holder disclaims all liability related to this derivative work.
+
 See [LICENSE](LICENSE) and [DISCLAIMER](DISCLAIMER).
