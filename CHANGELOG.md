@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.1](https://github.com/nicokim/indextts2-inference/compare/v2.1.0...v2.1.1) (2026-02-26)
+
+
+### Bug Fixes
+
+* add spanish melancholic keywords ([#12](https://github.com/nicokim/indextts2-inference/issues/12)) ([25d5160](https://github.com/nicokim/indextts2-inference/commit/25d5160896324a57b219a3fa2a5df67dcd274efe))
+
 ## [2.1.0](https://github.com/nicokim/indextts2-inference/compare/v2.0.2...v2.1.0) (2026-02-26)
 
 
