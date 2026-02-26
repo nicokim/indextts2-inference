@@ -1,6 +1,6 @@
 [project]
 name = "indextts2-inference"
-version = "2.0.0"
+version = "2.0.1"
 description = "IndexTTS2 inference library: zero-shot text-to-speech with emotional control"
 authors = [{ name = "Bilibili IndexTTS Team" }]
 license = "LicenseRef-Bilibili-IndexTTS"

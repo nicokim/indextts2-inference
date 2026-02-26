@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/nicokim/indextts2-inference/compare/v2.0.0...v2.0.1) (2026-02-26)
+
+
+### Bug Fixes
+
+* match PyPI project name (indextts2-inference) ([#6](https://github.com/nicokim/indextts2-inference/issues/6)) ([e6f033c](https://github.com/nicokim/indextts2-inference/commit/e6f033c826dd3a2dba923c00957b6bc68ab53a5c))
+
 ## [2.0.0](https://github.com/nicokim/indextts2-inference/compare/v1.0.0...v2.0.0) (2026-02-26)
 
 
