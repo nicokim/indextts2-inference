@@ -16,9 +16,7 @@ logger = get_logger(__name__)
 
 class TextNormalizer:
     def __init__(self, enable_glossary=False, preferred_language: str | None = None):
-        self.zh_normalizer = None
-        self.en_normalizer = None
-        self.es_normalizer = None
+        self._normalizers: dict = {}
         self.preferred_language = preferred_language.lower() if preferred_language else None
         self.char_rep_map = {
             "：": ",",
@@ -118,101 +116,64 @@ class TextNormalizer:
         has_pinyin = bool(re.search(TextNormalizer.PINYIN_TONE_PATTERN, s, re.IGNORECASE))
         return has_pinyin
 
+    def _get_nemo_normalizer(self, lang: str):
+        from nemo_text_processing.text_normalization.normalize import Normalizer
+
+        cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "nemo_cache")
+        os.makedirs(cache_dir, exist_ok=True)
+        return Normalizer(input_case="cased", lang=lang, cache_dir=cache_dir)
+
     def load(self):
-        if self.preferred_language == "es":
-            self.load_es()
-            return
-        if self.zh_normalizer is not None and self.en_normalizer is not None:
-            return
-        try:
-            from tn.chinese.normalizer import Normalizer as NormalizerZh
-            from tn.english.normalizer import Normalizer as NormalizerEn
-
-            cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tagger_cache")
-            if not os.path.exists(cache_dir):
-                os.makedirs(cache_dir)
-                with open(os.path.join(cache_dir, ".gitignore"), "w") as f:
-                    f.write("*\n")
-            self.zh_normalizer = NormalizerZh(
-                cache_dir=cache_dir, remove_interjections=False, remove_erhua=False, overwrite_cache=False
-            )
-            self.en_normalizer = NormalizerEn(overwrite_cache=False)
-        except ImportError:
-            from wetext import Normalizer
-
-            self.zh_normalizer = Normalizer(remove_erhua=False, lang="zh", operator="tn")
-            self.en_normalizer = Normalizer(lang="en", operator="tn")
-
-    def load_es(self):
-        if self.es_normalizer is not None:
-            return
-        try:
-            from nemo_text_processing.text_normalization.normalize import Normalizer
-
-            cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "nemo_es_cache")
-            os.makedirs(cache_dir, exist_ok=True)
-            self.es_normalizer = Normalizer(input_case="cased", lang="es", cache_dir=cache_dir)
-        except Exception as e:
-            logger.warning("Failed to load Spanish normalizer: %s", e)
-            logger.warning("Install with: pip install 'index-tts-inference[es]'")
-
-    def normalize_spanish(self, text: str) -> str:
-        if not text:
-            return ""
-        text = unicodedata.normalize("NFKC", text)
-        text = re.sub(r"\s+", " ", text).strip()
-        if not text:
-            return ""
-        if self.es_normalizer is None:
-            self.load_es()
-        if self.es_normalizer is not None:
-            try:
-                text = self.es_normalizer.normalize(text, verbose=False)
-            except Exception:
-                logger.warning("Spanish normalization error:\n%s", traceback.format_exc())
-        pattern = re.compile("|".join(re.escape(p) for p in self.char_rep_map.keys()))
-        text = pattern.sub(lambda x: self.char_rep_map[x.group()], text)
-        return text
+        langs = [self.preferred_language] if self.preferred_language else ["zh", "en"]
+        for lang in langs:
+            if lang not in self._normalizers:
+                self._normalizers[lang] = self._get_nemo_normalizer(lang)
 
     def normalize(self, text: str) -> str:
-        if self.preferred_language == "es":
-            return self.normalize_spanish(text)
-        if not self.zh_normalizer or not self.en_normalizer:
-            logger.warning("Text normalizer is not initialized!")
+        lang = self.preferred_language or ("zh" if self.use_chinese(text) else "en")
+        normalizer = self._normalizers.get(lang)
+        if not normalizer:
+            logger.warning("Text normalizer for '%s' is not initialized!", lang)
             return ""
-        if self.use_chinese(text):
+
+        if lang == "es":
+            if not text:
+                return ""
+            text = unicodedata.normalize("NFKC", text)
+            text = re.sub(r"\s+", " ", text).strip()
+            if not text:
+                return ""
+            try:
+                result = normalizer.normalize(text, verbose=False)
+            except Exception:
+                result = text
+                logger.warning("Spanish normalization error:\n%s", traceback.format_exc())
+            pattern = re.compile("|".join(re.escape(p) for p in self.char_rep_map.keys()))
+            result = pattern.sub(lambda x: self.char_rep_map[x.group()], result)
+        elif lang == "zh":
             text = re.sub(TextNormalizer.ENGLISH_CONTRACTION_PATTERN, r"\1 is", text, flags=re.IGNORECASE)
-            # 应用术语词汇表（优先级最高，在所有保护之前）
             if self.enable_glossary:
                 text = self.apply_glossary_terms(text, lang="zh")
-            # 保护技术术语（如 GPT-5-nano）避免被中文normalizer错误处理
             replaced_text, tech_list = self.save_tech_terms(text.rstrip())
             replaced_text, pinyin_list = self.save_pinyin_tones(replaced_text)
-
             replaced_text, original_name_list = self.save_names(replaced_text)
             try:
-                result = self.zh_normalizer.normalize(replaced_text)
+                result = normalizer.normalize(replaced_text, verbose=False)
             except Exception:
                 result = ""
                 logger.warning("Chinese normalization error:\n%s", traceback.format_exc())
-            # 恢复人名
             result = self.restore_names(result, original_name_list)
-            # 恢复拼音声调
             result = self.restore_pinyin_tones(result, pinyin_list)
-            # 恢复技术术语
             result = self.restore_tech_terms(result, tech_list)
             pattern = re.compile("|".join(re.escape(p) for p in self.zh_char_rep_map.keys()))
             result = pattern.sub(lambda x: self.zh_char_rep_map[x.group()], result)
         else:
             try:
                 text = re.sub(TextNormalizer.ENGLISH_CONTRACTION_PATTERN, r"\1 is", text, flags=re.IGNORECASE)
-                # 应用术语词汇表（优先级最高，在所有保护之前）
                 if self.enable_glossary:
                     text = self.apply_glossary_terms(text, lang="en")
-                # 保护技术术语（如 GPT-5-Nano）避免被英文normalizer错误处理
                 replaced_text, tech_list = self.save_tech_terms(text)
-                result = self.en_normalizer.normalize(replaced_text)
-                # 恢复技术术语
+                result = normalizer.normalize(replaced_text, verbose=False)
                 result = self.restore_tech_terms(result, tech_list)
             except Exception:
                 result = text

@@ -10,7 +10,6 @@ import torch
 import torchaudio
 from huggingface_hub import hf_hub_download, snapshot_download
 from omegaconf import OmegaConf
-from torch.nn.utils.rnn import pad_sequence
 from transformers import SeamlessM4TFeatureExtractor
 
 from indextts.emotion import QwenEmotion, find_most_similar_cosine
@@ -272,59 +271,6 @@ class IndexTTS2:
         feat = (feat - self.semantic_mean) / self.semantic_std
         return feat
 
-    def remove_long_silence(self, codes: torch.Tensor, silent_token=52, max_consecutive=30):
-        """
-        Shrink special tokens (silent_token and stop_mel_token) in codes
-        codes: [B, T]
-        """
-        code_lens = []
-        codes_list = []
-        device = codes.device
-        isfix = False
-        for i in range(0, codes.shape[0]):
-            code = codes[i]
-            if not torch.any(code == self.stop_mel_token).item():
-                len_ = code.size(0)
-            else:
-                stop_mel_idx = (code == self.stop_mel_token).nonzero(as_tuple=False)
-                len_ = stop_mel_idx[0].item() if len(stop_mel_idx) > 0 else code.size(0)
-
-            count = torch.sum(code == silent_token).item()
-            if count > max_consecutive:
-                ncode_idx = []
-                n = 0
-                for k in range(len_):
-                    assert code[k] != self.stop_mel_token, (
-                        f"stop_mel_token {self.stop_mel_token} should be shrinked here"
-                    )
-                    if code[k] != silent_token:
-                        ncode_idx.append(k)
-                        n = 0
-                    elif code[k] == silent_token and n < 10:
-                        ncode_idx.append(k)
-                        n += 1
-                len_ = len(ncode_idx)
-                codes_list.append(code[ncode_idx])
-                isfix = True
-            else:
-                # shrink to len_
-                codes_list.append(code[:len_])
-            code_lens.append(len_)
-        if isfix:
-            if len(codes_list) > 1:
-                codes = pad_sequence(codes_list, batch_first=True, padding_value=self.stop_mel_token)
-            else:
-                codes = codes_list[0].unsqueeze(0)
-        else:
-            # unchanged
-            pass
-        # clip codes to max length
-        max_len = max(code_lens)
-        if max_len < codes.shape[1]:
-            codes = codes[:, :max_len]
-        code_lens = torch.tensor(code_lens, dtype=torch.long, device=device)
-        return codes, code_lens
-
     def interval_silence(self, wavs, sampling_rate=22050, interval_silence=200):
         """
         Silences to be insert between generated segments.
@@ -470,7 +416,7 @@ class IndexTTS2:
         verbose=False,
         max_text_tokens_per_segment=120,
         stream_return=False,
-        more_segment_before=0,
+        quick_streaming_tokens=0,
         **generation_kwargs,
     ):
         if stream_return:
@@ -488,7 +434,7 @@ class IndexTTS2:
                 verbose,
                 max_text_tokens_per_segment,
                 stream_return,
-                more_segment_before,
+                quick_streaming_tokens,
                 **generation_kwargs,
             )
         else:
@@ -508,7 +454,7 @@ class IndexTTS2:
                         verbose,
                         max_text_tokens_per_segment,
                         stream_return,
-                        more_segment_before,
+                        quick_streaming_tokens,
                         **generation_kwargs,
                     )
                 )[0]

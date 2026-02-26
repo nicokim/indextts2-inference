@@ -53,7 +53,16 @@ class TestConvert:
         assert result["happy"] == 0.8
         assert result["angry"] == 0.2
         assert result["sad"] == 0.0  # missing key defaults to 0.0
-        assert list(result.keys()) == ["happy", "angry", "sad", "afraid", "disgusted", "melancholic", "surprised", "calm"]
+        assert list(result.keys()) == [
+            "happy",
+            "angry",
+            "sad",
+            "afraid",
+            "disgusted",
+            "melancholic",
+            "surprised",
+            "calm",
+        ]
 
     def test_clamps_values(self):
         content = {"高兴": 2.0, "愤怒": -0.5}
@@ -75,21 +84,25 @@ class TestConvert:
 class TestFindMostSimilarCosine:
     def test_finds_correct_index(self):
         query = torch.tensor([[1.0, 0.0, 0.0]])
-        matrix = torch.tensor([
-            [0.0, 1.0, 0.0],  # orthogonal
-            [1.0, 0.1, 0.0],  # most similar
-            [0.0, 0.0, 1.0],  # orthogonal
-        ])
+        matrix = torch.tensor(
+            [
+                [0.0, 1.0, 0.0],  # orthogonal
+                [1.0, 0.1, 0.0],  # most similar
+                [0.0, 0.0, 1.0],  # orthogonal
+            ]
+        )
         idx = find_most_similar_cosine(query, matrix)
         assert idx.item() == 1
 
     def test_identical_vector(self):
         query = torch.tensor([[0.5, 0.5, 0.5]])
-        matrix = torch.tensor([
-            [0.0, 0.0, 1.0],
-            [0.5, 0.5, 0.5],  # identical
-            [1.0, 0.0, 0.0],
-        ])
+        matrix = torch.tensor(
+            [
+                [0.0, 0.0, 1.0],
+                [0.5, 0.5, 0.5],  # identical
+                [1.0, 0.0, 0.0],
+            ]
+        )
         idx = find_most_similar_cosine(query, matrix)
         assert idx.item() == 1
 

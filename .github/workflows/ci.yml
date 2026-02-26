@@ -12,6 +12,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
 
       - run: uv run --group dev ruff check
 
@@ -21,6 +23,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
 
       - run: uv run --group test pytest --cov=indextts --cov-report=xml
 
