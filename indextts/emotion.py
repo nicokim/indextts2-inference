@@ -5,6 +5,10 @@ import torch
 import torch.nn.functional as F
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from indextts.logging import get_logger
+
+logger = get_logger(__name__)
+
 
 def find_most_similar_cosine(query_vector, matrix):
     query_vector = query_vector.float()
@@ -69,7 +73,7 @@ class QwenEmotion:
 
         # default to a calm/neutral voice if all emotion vectors were empty
         if all(val <= 0.0 for val in emotion_dict.values()):
-            print(">> no emotions detected; using default calm/neutral voice")
+            logger.info("no emotions detected; using default calm/neutral voice")
             emotion_dict["calm"] = 1.0
 
         return emotion_dict

@@ -4,22 +4,24 @@
 # Adapted from https://github.com/jik876/hifi-gan under the MIT license.
 #   LICENSE is in incl_licenses directory.
 
-import os
 import json
+import os
 from pathlib import Path
-from typing import Optional, Union, Dict
 
 import torch
 import torch.nn as nn
+from huggingface_hub import PyTorchModelHubMixin, hf_hub_download
 from torch.nn import Conv1d, ConvTranspose1d
-from torch.nn.utils import weight_norm, remove_weight_norm
+from torch.nn.utils import remove_weight_norm, weight_norm
+
+from indextts.logging import get_logger
 
 from . import activations
-from .utils import init_weights, get_padding
 from .alias_free_activation.torch.act import Activation1d as TorchActivation1d
 from .env import AttrDict
+from .utils import get_padding, init_weights
 
-from huggingface_hub import PyTorchModelHubMixin, hf_hub_download
+logger = get_logger(__name__)
 
 
 def load_hparams_from_json(path) -> AttrDict:
@@ -42,12 +44,12 @@ class AMPBlock1(torch.nn.Module):
     """
 
     def __init__(
-            self,
-            h: AttrDict,
-            channels: int,
-            kernel_size: int = 3,
-            dilation: tuple = (1, 3, 5),
-            activation: str = None,
+        self,
+        h: AttrDict,
+        channels: int,
+        kernel_size: int = 3,
+        dilation: tuple = (1, 3, 5),
+        activation: str = None,
     ):
         super().__init__()
 
@@ -87,9 +89,7 @@ class AMPBlock1(torch.nn.Module):
         )
         self.convs2.apply(init_weights)
 
-        self.num_layers = len(self.convs1) + len(
-            self.convs2
-        )  # Total number of conv layers
+        self.num_layers = len(self.convs1) + len(self.convs2)  # Total number of conv layers
 
         # Select which Activation1d, lazy-load cuda version to ensure backward compatibility
         if self.h.get("use_cuda_kernel", False):
@@ -105,22 +105,14 @@ class AMPBlock1(torch.nn.Module):
         if activation == "snake":
             self.activations = nn.ModuleList(
                 [
-                    Activation1d(
-                        activation=activations.Snake(
-                            channels, alpha_logscale=h.snake_logscale
-                        )
-                    )
+                    Activation1d(activation=activations.Snake(channels, alpha_logscale=h.snake_logscale))
                     for _ in range(self.num_layers)
                 ]
             )
         elif activation == "snakebeta":
             self.activations = nn.ModuleList(
                 [
-                    Activation1d(
-                        activation=activations.SnakeBeta(
-                            channels, alpha_logscale=h.snake_logscale
-                        )
-                    )
+                    Activation1d(activation=activations.SnakeBeta(channels, alpha_logscale=h.snake_logscale))
                     for _ in range(self.num_layers)
                 ]
             )
@@ -141,10 +133,10 @@ class AMPBlock1(torch.nn.Module):
         return x
 
     def remove_weight_norm(self):
-        for l in self.convs1:
-            remove_weight_norm(l)
-        for l in self.convs2:
-            remove_weight_norm(l)
+        for layer in self.convs1:
+            remove_weight_norm(layer)
+        for layer in self.convs2:
+            remove_weight_norm(layer)
 
 
 class AMPBlock2(torch.nn.Module):
@@ -161,12 +153,12 @@ class AMPBlock2(torch.nn.Module):
     """
 
     def __init__(
-            self,
-            h: AttrDict,
-            channels: int,
-            kernel_size: int = 3,
-            dilation: tuple = (1, 3, 5),
-            activation: str = None,
+        self,
+        h: AttrDict,
+        channels: int,
+        kernel_size: int = 3,
+        dilation: tuple = (1, 3, 5),
+        activation: str = None,
     ):
         super().__init__()
 
@@ -205,22 +197,14 @@ class AMPBlock2(torch.nn.Module):
         if activation == "snake":
             self.activations = nn.ModuleList(
                 [
-                    Activation1d(
-                        activation=activations.Snake(
-                            channels, alpha_logscale=h.snake_logscale
-                        )
-                    )
+                    Activation1d(activation=activations.Snake(channels, alpha_logscale=h.snake_logscale))
                     for _ in range(self.num_layers)
                 ]
             )
         elif activation == "snakebeta":
             self.activations = nn.ModuleList(
                 [
-                    Activation1d(
-                        activation=activations.SnakeBeta(
-                            channels, alpha_logscale=h.snake_logscale
-                        )
-                    )
+                    Activation1d(activation=activations.SnakeBeta(channels, alpha_logscale=h.snake_logscale))
                     for _ in range(self.num_layers)
                 ]
             )
@@ -236,8 +220,8 @@ class AMPBlock2(torch.nn.Module):
             x = xt + x
 
     def remove_weight_norm(self):
-        for l in self.convs:
-            remove_weight_norm(l)
+        for layer in self.convs:
+            remove_weight_norm(layer)
 
 
 class BigVGAN(
@@ -282,9 +266,7 @@ class BigVGAN(
         self.num_upsamples = len(h.upsample_rates)
 
         # Pre-conv
-        self.conv_pre = weight_norm(
-            Conv1d(h.num_mels, h.upsample_initial_channel, 7, 1, padding=3)
-        )
+        self.conv_pre = weight_norm(Conv1d(h.num_mels, h.upsample_initial_channel, 7, 1, padding=3))
 
         # Define which AMPBlock to use. BigVGAN uses AMPBlock1 as default
         if h.resblock == "1":
@@ -292,9 +274,7 @@ class BigVGAN(
         elif h.resblock == "2":
             resblock_class = AMPBlock2
         else:
-            raise ValueError(
-                f"Incorrect resblock class specified in hyperparameters. Got {h.resblock}"
-            )
+            raise ValueError(f"Incorrect resblock class specified in hyperparameters. Got {h.resblock}")
 
         # Transposed conv-based upsamplers. does not apply anti-aliasing
         self.ups = nn.ModuleList()
@@ -304,7 +284,7 @@ class BigVGAN(
                     [
                         weight_norm(
                             ConvTranspose1d(
-                                h.upsample_initial_channel // (2 ** i),
+                                h.upsample_initial_channel // (2**i),
                                 h.upsample_initial_channel // (2 ** (i + 1)),
                                 k,
                                 u,
@@ -319,22 +299,14 @@ class BigVGAN(
         self.resblocks = nn.ModuleList()
         for i in range(len(self.ups)):
             ch = h.upsample_initial_channel // (2 ** (i + 1))
-            for j, (k, d) in enumerate(
-                    zip(h.resblock_kernel_sizes, h.resblock_dilation_sizes)
-            ):
-                self.resblocks.append(
-                    resblock_class(h, ch, k, d, activation=h.activation)
-                )
+            for j, (k, d) in enumerate(zip(h.resblock_kernel_sizes, h.resblock_dilation_sizes)):
+                self.resblocks.append(resblock_class(h, ch, k, d, activation=h.activation))
 
         # Post-conv
         activation_post = (
             activations.Snake(ch, alpha_logscale=h.snake_logscale)
             if h.activation == "snake"
-            else (
-                activations.SnakeBeta(ch, alpha_logscale=h.snake_logscale)
-                if h.activation == "snakebeta"
-                else None
-            )
+            else (activations.SnakeBeta(ch, alpha_logscale=h.snake_logscale) if h.activation == "snakebeta" else None)
         )
         if activation_post is None:
             raise NotImplementedError(
@@ -345,9 +317,7 @@ class BigVGAN(
 
         # Whether to use bias for the final conv_post. Default to True for backward compatibility
         self.use_bias_at_final = h.get("use_bias_at_final", True)
-        self.conv_post = weight_norm(
-            Conv1d(ch, 1, 7, 1, padding=3, bias=self.use_bias_at_final)
-        )
+        self.conv_post = weight_norm(Conv1d(ch, 1, 7, 1, padding=3, bias=self.use_bias_at_final))
 
         # Weight initialization
         for i in range(len(self.ups)):
@@ -387,16 +357,16 @@ class BigVGAN(
 
     def remove_weight_norm(self):
         try:
-            print("Removing weight norm...")
-            for l in self.ups:
-                for l_i in l:
-                    remove_weight_norm(l_i)
-            for l in self.resblocks:
-                l.remove_weight_norm()
+            logger.debug("Removing weight norm...")
+            for up in self.ups:
+                for up_i in up:
+                    remove_weight_norm(up_i)
+            for resblock in self.resblocks:
+                resblock.remove_weight_norm()
             remove_weight_norm(self.conv_pre)
             remove_weight_norm(self.conv_post)
         except ValueError:
-            print("[INFO] Model already removed weight norm. Skipping!")
+            logger.debug("Model already removed weight norm. Skipping!")
             pass
 
     # Additional methods for huggingface_hub support
@@ -412,26 +382,24 @@ class BigVGAN(
 
     @classmethod
     def _from_pretrained(
-            cls,
-            *,
-            model_id: str,
-            revision: str,
-            cache_dir: str,
-            force_download: bool,
-            proxies: Optional[Dict],
-            resume_download: bool,
-            local_files_only: bool,
-            token: Union[str, bool, None],
-            map_location: str = "cpu",  # Additional argument
-            strict: bool = False,  # Additional argument
-            use_cuda_kernel: bool = False,
-            **model_kwargs,
+        cls,
+        *,
+        model_id: str,
+        revision: str,
+        cache_dir: str,
+        force_download: bool,
+        local_files_only: bool,
+        token: str | bool | None,
+        map_location: str = "cpu",  # Additional argument
+        strict: bool = False,  # Additional argument
+        use_cuda_kernel: bool = False,
+        **model_kwargs,
     ):
         """Load Pytorch pretrained weights and return the loaded model."""
 
         # Download and load hyperparameters (h) used by BigVGAN
         if os.path.isdir(model_id):
-            print("Loading config.json from local directory")
+            logger.debug("Loading config.json from local directory")
             config_file = os.path.join(model_id, "config.json")
         else:
             config_file = hf_hub_download(
@@ -440,8 +408,6 @@ class BigVGAN(
                 revision=revision,
                 cache_dir=cache_dir,
                 force_download=force_download,
-                proxies=proxies,
-                resume_download=resume_download,
                 token=token,
                 local_files_only=local_files_only,
             )
@@ -449,31 +415,25 @@ class BigVGAN(
 
         # instantiate BigVGAN using h
         if use_cuda_kernel:
-            print(
-                f"[WARNING] You have specified use_cuda_kernel=True during BigVGAN.from_pretrained(). Only inference is supported (training is not implemented)!"
-            )
-            print(
-                f"[WARNING] You need nvcc and ninja installed in your system that matches your PyTorch build is using to build the kernel. If not, the model will fail to initialize or generate incorrect waveform!"
-            )
-            print(
-                f"[WARNING] For detail, see the official GitHub repository: https://github.com/NVIDIA/BigVGAN?tab=readme-ov-file#using-custom-cuda-kernel-for-synthesis"
+            logger.warning(
+                "use_cuda_kernel=True: Only inference is supported (training is not implemented)! "
+                "You need nvcc and ninja installed matching your PyTorch build. "
+                "See: https://github.com/NVIDIA/BigVGAN?tab=readme-ov-file#using-custom-cuda-kernel-for-synthesis"
             )
         model = cls(h, use_cuda_kernel=use_cuda_kernel)
 
         # Download and load pretrained generator weight
         if os.path.isdir(model_id):
-            print("Loading weights from local directory")
+            logger.debug("Loading weights from local directory")
             model_file = os.path.join(model_id, "bigvgan_generator.pt")
         else:
-            print(f"Loading weights from {model_id}")
+            logger.debug("Loading weights from %s", model_id)
             model_file = hf_hub_download(
                 repo_id=model_id,
                 filename="bigvgan_generator.pt",
                 revision=revision,
                 cache_dir=cache_dir,
                 force_download=force_download,
-                proxies=proxies,
-                resume_download=resume_download,
                 token=token,
                 local_files_only=local_files_only,
             )
@@ -483,9 +443,7 @@ class BigVGAN(
         try:
             model.load_state_dict(checkpoint_dict["generator"])
         except RuntimeError:
-            print(
-                f"[INFO] the pretrained checkpoint does not contain weight norm. Loading the checkpoint after removing weight norm!"
-            )
+            logger.debug("Pretrained checkpoint does not contain weight norm. Loading after removing weight norm.")
             model.remove_weight_norm()
             model.load_state_dict(checkpoint_dict["generator"])
 

@@ -32,6 +32,9 @@ desktop.ini
 
 # Test outputs.
 test_*.wav
+.coverage
+htmlcov/
+.pytest_cache/
 
 # CUDA kernel build artifacts.
 indextts/s2mel/modules/bigvgan/alias_free_activation/cuda/build/

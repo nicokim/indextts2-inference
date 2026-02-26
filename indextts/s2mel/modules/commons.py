@@ -1,12 +1,16 @@
+import argparse
 import math
+
 import numpy as np
 import torch
+from munch import Munch
 from torch import nn
 from torch.nn import functional as F
-from munch import Munch
-import json
-import argparse
-from torch.nn.parallel import DistributedDataParallel as DDP
+
+from indextts.logging import get_logger
+
+logger = get_logger(__name__)
+
 
 def str2bool(v):
     if isinstance(v, bool):
@@ -18,9 +22,10 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError("Boolean value expected.")
 
+
 class AttrDict(dict):
     def __init__(self, *args, **kwargs):
-        super(AttrDict, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.__dict__ = self
 
 
@@ -35,8 +40,8 @@ def get_padding(kernel_size, dilation=1):
 
 
 def convert_pad_shape(pad_shape):
-    l = pad_shape[::-1]
-    pad_shape = [item for sublist in l for item in sublist]
+    rev = pad_shape[::-1]
+    pad_shape = [item for sublist in rev for item in sublist]
     return pad_shape
 
 
@@ -49,9 +54,7 @@ def intersperse(lst, item):
 def kl_divergence(m_p, logs_p, m_q, logs_q):
     """KL(P||Q)"""
     kl = (logs_q - logs_p) - 0.5
-    kl += (
-        0.5 * (torch.exp(2.0 * logs_p) + ((m_p - m_q) ** 2)) * torch.exp(-2.0 * logs_q)
-    )
+    kl += 0.5 * (torch.exp(2.0 * logs_p) + ((m_p - m_q) ** 2)) * torch.exp(-2.0 * logs_q)
     return kl
 
 
@@ -89,9 +92,7 @@ def rand_slice_segments(x, x_lengths=None, segment_size=4):
     if x_lengths is None:
         x_lengths = t
     ids_str_max = x_lengths - segment_size + 1
-    ids_str = ((torch.rand([b]).to(device=x.device) * ids_str_max).clip(0)).to(
-        dtype=torch.long
-    )
+    ids_str = ((torch.rand([b]).to(device=x.device) * ids_str_max).clip(0)).to(dtype=torch.long)
     ret = slice_segments(x, ids_str, segment_size)
     return ret, ids_str
 
@@ -99,9 +100,7 @@ def rand_slice_segments(x, x_lengths=None, segment_size=4):
 def get_timing_signal_1d(length, channels, min_timescale=1.0, max_timescale=1.0e4):
     position = torch.arange(length, dtype=torch.float)
     num_timescales = channels // 2
-    log_timescale_increment = math.log(float(max_timescale) / float(min_timescale)) / (
-        num_timescales - 1
-    )
+    log_timescale_increment = math.log(float(max_timescale) / float(min_timescale)) / (num_timescales - 1)
     inv_timescales = min_timescale * torch.exp(
         torch.arange(num_timescales, dtype=torch.float) * -log_timescale_increment
     )
@@ -141,12 +140,6 @@ def fused_add_tanh_sigmoid_multiply(input_a, input_b, n_channels):
     return acts
 
 
-def convert_pad_shape(pad_shape):
-    l = pad_shape[::-1]
-    pad_shape = [item for sublist in l for item in sublist]
-    return pad_shape
-
-
 def shift_1d(x):
     x = F.pad(x, convert_pad_shape([[0, 0], [0, 0], [1, 0]]))[:, :, :-1]
     return x
@@ -176,8 +169,6 @@ def generate_path(duration, mask):
     duration: [b, 1, t_x]
     mask: [b, 1, t_y, t_x]
     """
-    device = duration.device
-
     b, _, t_y, t_x = mask.shape
     cum_duration = torch.cumsum(duration, -1)
 
@@ -249,14 +240,10 @@ def modify_w2v_forward(self, output_layer=15):
         conv_attention_mask = attention_mask
         if attention_mask is not None:
             # make sure padded tokens output 0
-            hidden_states = hidden_states.masked_fill(
-                ~attention_mask.bool().unsqueeze(-1), 0.0
-            )
+            hidden_states = hidden_states.masked_fill(~attention_mask.bool().unsqueeze(-1), 0.0)
 
             # extend attention_mask
-            attention_mask = 1.0 - attention_mask[:, None, None, :].to(
-                dtype=hidden_states.dtype
-            )
+            attention_mask = 1.0 - attention_mask[:, None, None, :].to(dtype=hidden_states.dtype)
             attention_mask = attention_mask * torch.finfo(hidden_states.dtype).min
             attention_mask = attention_mask.expand(
                 attention_mask.shape[0],
@@ -281,11 +268,7 @@ def modify_w2v_forward(self, output_layer=15):
             # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
             dropout_probability = torch.rand([])
 
-            skip_the_layer = (
-                True
-                if self.training and (dropout_probability < self.config.layerdrop)
-                else False
-            )
+            skip_the_layer = True if self.training and (dropout_probability < self.config.layerdrop) else False
             if not skip_the_layer or deepspeed_zero3_is_enabled:
                 # under deepspeed zero3 all gpus must run in sync
                 if self.gradient_checkpointing and self.training:
@@ -320,11 +303,7 @@ def modify_w2v_forward(self, output_layer=15):
             all_hidden_states = all_hidden_states + (hidden_states,)
 
         if not return_dict:
-            return tuple(
-                v
-                for v in [hidden_states, all_hidden_states, all_self_attentions]
-                if v is not None
-            )
+            return tuple(v for v in [hidden_states, all_hidden_states, all_self_attentions] if v is not None)
         return BaseModelOutput(
             last_hidden_state=hidden_states,
             hidden_states=all_hidden_states,
@@ -340,8 +319,9 @@ MATPLOTLIB_FLAG = False
 def plot_spectrogram_to_numpy(spectrogram):
     global MATPLOTLIB_FLAG
     if not MATPLOTLIB_FLAG:
-        import matplotlib
         import logging
+
+        import matplotlib
 
         matplotlib.use("Agg")
         MATPLOTLIB_FLAG = True
@@ -388,83 +368,95 @@ def normalize_f0(f0_sequence):
 
 
 class MyModel(nn.Module):
-    def __init__(self,args, use_emovec=False, use_gpt_latent=False):
-        super(MyModel, self).__init__()
+    def __init__(self, args, use_emovec=False, use_gpt_latent=False):
+        super().__init__()
         from indextts.s2mel.modules.flow_matching import CFM
         from indextts.s2mel.modules.length_regulator import InterpolateRegulator
-        
+
         length_regulator = InterpolateRegulator(
             channels=args.length_regulator.channels,
             sampling_ratios=args.length_regulator.sampling_ratios,
             is_discrete=args.length_regulator.is_discrete,
             in_channels=args.length_regulator.in_channels if hasattr(args.length_regulator, "in_channels") else None,
-            vector_quantize=args.length_regulator.vector_quantize if hasattr(args.length_regulator, "vector_quantize") else False,
+            vector_quantize=args.length_regulator.vector_quantize
+            if hasattr(args.length_regulator, "vector_quantize")
+            else False,
             codebook_size=args.length_regulator.content_codebook_size,
             n_codebooks=args.length_regulator.n_codebooks if hasattr(args.length_regulator, "n_codebooks") else 1,
-            quantizer_dropout=args.length_regulator.quantizer_dropout if hasattr(args.length_regulator, "quantizer_dropout") else 0.0,
-            f0_condition=args.length_regulator.f0_condition if hasattr(args.length_regulator, "f0_condition") else False,
+            quantizer_dropout=args.length_regulator.quantizer_dropout
+            if hasattr(args.length_regulator, "quantizer_dropout")
+            else 0.0,
+            f0_condition=args.length_regulator.f0_condition
+            if hasattr(args.length_regulator, "f0_condition")
+            else False,
             n_f0_bins=args.length_regulator.n_f0_bins if hasattr(args.length_regulator, "n_f0_bins") else 512,
         )
 
         if use_gpt_latent:
-            self.models = nn.ModuleDict({
-                'cfm': CFM(args),
-                'length_regulator': length_regulator,
-                'gpt_layer': torch.nn.Sequential(torch.nn.Linear(1280, 256), torch.nn.Linear(256, 128), torch.nn.Linear(128, 1024))
-            })
+            self.models = nn.ModuleDict(
+                {
+                    "cfm": CFM(args),
+                    "length_regulator": length_regulator,
+                    "gpt_layer": torch.nn.Sequential(
+                        torch.nn.Linear(1280, 256), torch.nn.Linear(256, 128), torch.nn.Linear(128, 1024)
+                    ),
+                }
+            )
 
         else:
-            self.models = nn.ModuleDict({
-                'cfm': CFM(args),
-                'length_regulator': length_regulator
-            })
-    
+            self.models = nn.ModuleDict({"cfm": CFM(args), "length_regulator": length_regulator})
+
     def forward(self, x, target_lengths, prompt_len, cond, y):
-        x = self.models['cfm'](x, target_lengths, prompt_len, cond, y)
+        x = self.models["cfm"](x, target_lengths, prompt_len, cond, y)
         return x
-    
-    def forward2(self, S_ori,target_lengths,F0_ori):
-        x = self.models['length_regulator'](S_ori, ylens=target_lengths, f0=F0_ori)
+
+    def forward2(self, S_ori, target_lengths, F0_ori):
+        x = self.models["length_regulator"](S_ori, ylens=target_lengths, f0=F0_ori)
         return x
 
     def forward_emovec(self, x):
-        x = self.models['emo_layer'](x)
+        x = self.models["emo_layer"](x)
         return x
 
     def forward_emo_encoder(self, x):
-        x = self.models['emo_encoder'](x)
+        x = self.models["emo_encoder"](x)
         return x
 
-    def forward_gpt(self,x):
-        x = self.models['gpt_layer'](x)
+    def forward_gpt(self, x):
+        x = self.models["gpt_layer"](x)
         return x
 
     def enable_torch_compile(self):
         """Enable torch.compile optimization.
-        
+
         This method applies torch.compile to the model for significant
         performance improvements during inference.
         """
-        if 'cfm' in self.models:
-            self.models['cfm'].enable_torch_compile()
-
+        if "cfm" in self.models:
+            self.models["cfm"].enable_torch_compile()
 
 
 def build_model(args, stage="DiT"):
     if stage == "DiT":
         from modules.flow_matching import CFM
         from modules.length_regulator import InterpolateRegulator
-        
+
         length_regulator = InterpolateRegulator(
             channels=args.length_regulator.channels,
             sampling_ratios=args.length_regulator.sampling_ratios,
             is_discrete=args.length_regulator.is_discrete,
             in_channels=args.length_regulator.in_channels if hasattr(args.length_regulator, "in_channels") else None,
-            vector_quantize=args.length_regulator.vector_quantize if hasattr(args.length_regulator, "vector_quantize") else False,
+            vector_quantize=args.length_regulator.vector_quantize
+            if hasattr(args.length_regulator, "vector_quantize")
+            else False,
             codebook_size=args.length_regulator.content_codebook_size,
             n_codebooks=args.length_regulator.n_codebooks if hasattr(args.length_regulator, "n_codebooks") else 1,
-            quantizer_dropout=args.length_regulator.quantizer_dropout if hasattr(args.length_regulator, "quantizer_dropout") else 0.0,
-            f0_condition=args.length_regulator.f0_condition if hasattr(args.length_regulator, "f0_condition") else False,
+            quantizer_dropout=args.length_regulator.quantizer_dropout
+            if hasattr(args.length_regulator, "quantizer_dropout")
+            else 0.0,
+            f0_condition=args.length_regulator.f0_condition
+            if hasattr(args.length_regulator, "f0_condition")
+            else False,
             n_f0_bins=args.length_regulator.n_f0_bins if hasattr(args.length_regulator, "n_f0_bins") else 512,
         )
         cfm = CFM(args)
@@ -472,8 +464,8 @@ def build_model(args, stage="DiT"):
             cfm=cfm,
             length_regulator=length_regulator,
         )
-        
-    elif stage == 'codec':
+
+    elif stage == "codec":
         from dac.model.dac import Encoder
         from modules.quantize import (
             FAquantizer,
@@ -508,6 +500,7 @@ def build_model(args, stage="DiT"):
 
     elif stage == "mel_vocos":
         from modules.vocos import Vocos
+
         decoder = Vocos(args)
         nets = Munch(
             decoder=decoder,
@@ -531,7 +524,7 @@ def load_checkpoint(
     state = torch.load(path, map_location="cpu")
     params = state["net"]
     if load_ema and "ema" in state:
-        print("Loading EMA")
+        logger.info("Loading EMA")
         for key in model:
             i = 0
             for param_name in params[key]:
@@ -551,16 +544,12 @@ def load_checkpoint(
             model_state_dict = model[key].state_dict()
             # 过滤出形状匹配的键值对
             filtered_state_dict = {
-                k: v
-                for k, v in params[key].items()
-                if k in model_state_dict and v.shape == model_state_dict[k].shape
+                k: v for k, v in params[key].items() if k in model_state_dict and v.shape == model_state_dict[k].shape
             }
             skipped_keys = set(params[key].keys()) - set(filtered_state_dict.keys())
             if skipped_keys:
-                print(
-                    f"Warning: Skipped loading some keys due to shape mismatch: {skipped_keys}"
-                )
-            print("%s loaded" % key)
+                logger.warning("Skipped loading some keys due to shape mismatch: %s", skipped_keys)
+            logger.info("%s loaded", key)
             model[key].load_state_dict(filtered_state_dict, strict=False)
     _ = [model[key].eval() for key in model]
 
@@ -576,6 +565,7 @@ def load_checkpoint(
 
     return model, optimizer, epoch, iters
 
+
 def load_checkpoint2(
     model,
     optimizer,
@@ -588,7 +578,7 @@ def load_checkpoint2(
     state = torch.load(path, map_location="cpu")
     params = state["net"]
     if load_ema and "ema" in state:
-        print("Loading EMA")
+        logger.info("Loading EMA")
         for key in model.models:
             i = 0
             for param_name in params[key]:
@@ -608,19 +598,15 @@ def load_checkpoint2(
             model_state_dict = model.models[key].state_dict()
             # 过滤出形状匹配的键值对
             filtered_state_dict = {
-                k: v
-                for k, v in params[key].items()
-                if k in model_state_dict and v.shape == model_state_dict[k].shape
+                k: v for k, v in params[key].items() if k in model_state_dict and v.shape == model_state_dict[k].shape
             }
             skipped_keys = set(params[key].keys()) - set(filtered_state_dict.keys())
             if skipped_keys:
-                print(
-                    f"Warning: Skipped loading some keys due to shape mismatch: {skipped_keys}"
-                )
-            print("%s loaded" % key)
+                logger.warning("Skipped loading some keys due to shape mismatch: %s", skipped_keys)
+            logger.info("%s loaded", key)
             model.models[key].load_state_dict(filtered_state_dict, strict=False)
     model.eval()
-#     _ = [model[key].eval() for key in model]
+    #     _ = [model[key].eval() for key in model]
 
     if not load_only_params:
         epoch = state["epoch"] + 1
@@ -633,6 +619,7 @@ def load_checkpoint2(
         iters = 0
 
     return model, optimizer, epoch, iters
+
 
 def recursive_munch(d):
     if isinstance(d, dict):

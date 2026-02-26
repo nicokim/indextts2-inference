@@ -15,6 +15,7 @@ from transformers import SeamlessM4TFeatureExtractor
 
 from indextts.emotion import QwenEmotion, find_most_similar_cosine
 from indextts.gpt.model_v2 import UnifiedVoice
+from indextts.logging import get_logger
 from indextts.s2mel.modules.audio import mel_spectrogram
 from indextts.s2mel.modules.bigvgan import bigvgan
 from indextts.s2mel.modules.campplus.DTDNN import CAMPPlus
@@ -22,6 +23,8 @@ from indextts.s2mel.modules.commons import MyModel, load_checkpoint2
 from indextts.utils.checkpoint import load_checkpoint
 from indextts.utils.front import TextNormalizer, TextTokenizer
 from indextts.utils.maskgct_utils import build_semantic_codec, build_semantic_model
+
+logger = get_logger(__name__)
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -41,6 +44,7 @@ class IndexTTS2:
         use_accel=False,
         use_torch_compile=False,
         language=None,
+        attn_backend=None,
     ):
         """
         Args:
@@ -53,7 +57,34 @@ class IndexTTS2:
             use_accel (bool): whether to use acceleration engine for GPT2 or not.
             use_torch_compile (bool): whether to use torch.compile for optimization or not.
             language (str | None): language for text normalization ('es', 'zh', 'en'). If None, auto-detects between Chinese and English.
+            attn_backend (str | None): attention backend to use.
+                - None: PyTorch native SDPA (default, auto-selects best backend)
+                - "sage": SageAttention (2-5x faster, requires sageattention package)
+                - "flash": Flash Attention v2 acceleration engine with KV cache and CUDA graphs
+                           (requires flash-attn package)
         """
+        if attn_backend == "sage":
+            try:
+                from sageattention import sageattn
+            except ImportError:
+                raise ImportError(
+                    "sageattention is required for attn_backend='sage'. "
+                    "Install with: pip install indextts2-inference[sage-attn]"
+                )
+            _original_sdpa = torch.nn.functional.scaled_dot_product_attention
+
+            def _sage_sdpa(query, key, value, *args, **kwargs):
+                if query.dtype in (torch.float16, torch.bfloat16):
+                    return sageattn(query, key, value, *args, **kwargs)
+                return _original_sdpa(query, key, value, *args, **kwargs)
+
+            torch.nn.functional.scaled_dot_product_attention = _sage_sdpa
+            logger.info("SageAttention backend enabled")
+        elif attn_backend == "flash":
+            use_accel = True
+        elif attn_backend is not None:
+            raise ValueError(f"Unknown attn_backend={attn_backend!r}. Must be None, 'sage', or 'flash'.")
+
         self._resolve_device(device, use_fp16, use_cuda_kernel)
         self._load_config(model_dir, cfg_path)
         self.use_accel = use_accel
@@ -87,7 +118,7 @@ class IndexTTS2:
             self.device = "cpu"
             self.use_fp16 = False
             self.use_cuda_kernel = False
-            print(">> Be patient, it may take a while to run in CPU mode.")
+            logger.warning("Be patient, it may take a while to run in CPU mode.")
         self.dtype = torch.float16 if self.use_fp16 else None
 
     def _load_config(self, model_dir, cfg_path):
@@ -111,14 +142,14 @@ class IndexTTS2:
             self.gpt.eval().half()
         else:
             self.gpt.eval()
-        print(">> GPT weights restored from:", self.gpt_path)
+        logger.info("GPT weights restored from: %s", self.gpt_path)
 
         if use_deepspeed:
             try:
                 import deepspeed  # noqa: F401
             except (ImportError, OSError, CalledProcessError) as e:
                 use_deepspeed = False
-                print(f">> Failed to load DeepSpeed. Falling back to normal inference. Error: {e}")
+                logger.warning("Failed to load DeepSpeed. Falling back to normal inference. Error: %s", e)
 
         self.gpt.post_init_gpt2_config(use_deepspeed=use_deepspeed, kv_cache=True, half=self.use_fp16)
 
@@ -126,10 +157,9 @@ class IndexTTS2:
             try:
                 from indextts.s2mel.modules.bigvgan.alias_free_activation.cuda import activation1d
 
-                print(">> Preload custom CUDA kernel for BigVGAN", activation1d.anti_alias_activation_cuda)
+                logger.info("Preload custom CUDA kernel for BigVGAN %s", activation1d.anti_alias_activation_cuda)
             except Exception as e:
-                print(">> Failed to load custom CUDA kernel for BigVGAN. Falling back to torch.")
-                print(f"{e!r}")
+                logger.warning("Failed to load custom CUDA kernel for BigVGAN. Falling back to torch. %r", e)
                 self.use_cuda_kernel = False
 
     def _load_semantic(self):
@@ -147,7 +177,7 @@ class IndexTTS2:
         safetensors.torch.load_model(semantic_codec, semantic_code_ckpt)
         self.semantic_codec = semantic_codec.to(self.device)
         self.semantic_codec.eval()
-        print(f">> semantic_codec weights restored from: {semantic_code_ckpt}")
+        logger.info("semantic_codec weights restored from: %s", semantic_code_ckpt)
 
     def _load_s2mel(self):
         s2mel_path = os.path.join(self.model_dir, self.cfg.s2mel_checkpoint)
@@ -164,19 +194,19 @@ class IndexTTS2:
         self.s2mel.models["cfm"].estimator.setup_caches(max_batch_size=1, max_seq_length=8192)
 
         if self.use_torch_compile:
-            print(">> Enabling torch.compile optimization")
+            logger.info("Enabling torch.compile optimization")
             self.s2mel.enable_torch_compile()
-            print(">> torch.compile optimization enabled successfully")
+            logger.info("torch.compile optimization enabled successfully")
 
         self.s2mel.eval()
-        print(">> s2mel weights restored from:", s2mel_path)
+        logger.info("s2mel weights restored from: %s", s2mel_path)
 
         campplus_ckpt_path = hf_hub_download("funasr/campplus", filename="campplus_cn_common.bin")
         campplus_model = CAMPPlus(feat_dim=80, embedding_size=192)
         campplus_model.load_state_dict(torch.load(campplus_ckpt_path, map_location="cpu"))
         self.campplus_model = campplus_model.to(self.device)
         self.campplus_model.eval()
-        print(">> campplus_model weights restored from:", campplus_ckpt_path)
+        logger.info("campplus_model weights restored from: %s", campplus_ckpt_path)
 
     def _load_vocoder(self):
         bigvgan_name = self.cfg.vocoder.name
@@ -184,20 +214,20 @@ class IndexTTS2:
         self.bigvgan = self.bigvgan.to(self.device)
         self.bigvgan.remove_weight_norm()
         self.bigvgan.eval()
-        print(">> bigvgan weights restored from:", bigvgan_name)
+        logger.info("bigvgan weights restored from: %s", bigvgan_name)
 
     def _load_text(self, language):
         self.bpe_path = os.path.join(self.model_dir, self.cfg.dataset["bpe_model"])
         self.normalizer = TextNormalizer(enable_glossary=True, preferred_language=language)
         self.normalizer.load()
-        print(f">> TextNormalizer loaded (language={language or 'auto'})")
+        logger.info("TextNormalizer loaded (language=%s)", language or "auto")
         self.tokenizer = TextTokenizer(self.bpe_path, self.normalizer)
-        print(">> bpe model loaded from:", self.bpe_path)
+        logger.info("bpe model loaded from: %s", self.bpe_path)
 
         self.glossary_path = os.path.join(self.model_dir, "glossary.yaml")
         if os.path.exists(self.glossary_path):
             self.normalizer.load_glossary_from_yaml(self.glossary_path)
-            print(">> Glossary loaded from:", self.glossary_path)
+            logger.info("Glossary loaded from: %s", self.glossary_path)
 
     def _load_emotion_matrices(self):
         emo_matrix = torch.load(os.path.join(self.model_dir, self.cfg.emo_matrix))
@@ -342,7 +372,7 @@ class IndexTTS2:
 
         if audio.shape[1] > max_audio_samples:
             if verbose:
-                print(f"Audio too long ({audio.shape[1]} samples), truncating to {max_audio_samples} samples")
+                logger.debug("Audio too long (%d samples), truncating to %d samples", audio.shape[1], max_audio_samples)
             audio = audio[:, :max_audio_samples]
         return audio, sr
 
@@ -503,13 +533,18 @@ class IndexTTS2:
         quick_streaming_tokens=0,
         **generation_kwargs,
     ):
-        print(">> starting inference...")
+        logger.info("starting inference...")
         if verbose:
-            print(
-                f"origin text:{text}, spk_audio_prompt:{spk_audio_prompt}, "
-                f"emo_audio_prompt:{emo_audio_prompt}, emo_alpha:{emo_alpha}, "
-                f"emo_vector:{emo_vector}, use_emo_text:{use_emo_text}, "
-                f"emo_text:{emo_text}"
+            logger.debug(
+                "origin text:%s, spk_audio_prompt:%s, emo_audio_prompt:%s, emo_alpha:%s, "
+                "emo_vector:%s, use_emo_text:%s, emo_text:%s",
+                text,
+                spk_audio_prompt,
+                emo_audio_prompt,
+                emo_alpha,
+                emo_vector,
+                use_emo_text,
+                emo_text,
             )
         start_time = time.perf_counter()
 
@@ -523,7 +558,7 @@ class IndexTTS2:
             if emo_text is None:
                 emo_text = text  # use main text prompt
             emo_dict = self.qwen_emo.inference(emo_text)
-            print(f"detected emotion vectors from text: {emo_dict}")
+            logger.debug("detected emotion vectors from text: %s", emo_dict)
             # convert ordered dict to list of vectors; the order is VERY important!
             emo_vector = list(emo_dict.values())
 
@@ -535,7 +570,7 @@ class IndexTTS2:
             if emo_vector_scale != 1.0:
                 # scale each vector and truncate to 4 decimals (for nicer printing)
                 emo_vector = [int(x * emo_vector_scale * 10000) / 10000 for x in emo_vector]
-                print(f"scaled emotion vectors to {emo_vector_scale}x: {emo_vector}")
+                logger.debug("scaled emotion vectors to %sx: %s", emo_vector_scale, emo_vector)
 
         if emo_audio_prompt is None:
             # we are not using any external "emotion reference voice"; use
@@ -569,20 +604,20 @@ class IndexTTS2:
 
         text_token_ids = self.tokenizer.convert_tokens_to_ids(text_tokens_list)
         if self.tokenizer.unk_token_id in text_token_ids:
-            print(
-                f"  >> Warning: input text contains {text_token_ids.count(self.tokenizer.unk_token_id)} unknown tokens (id={self.tokenizer.unk_token_id}):"
-            )
-            print(
-                "     Tokens which can't be encoded: ",
+            logger.warning(
+                "Input text contains %d unknown tokens (id=%d): %s. "
+                "Consider updating the BPE model or modifying the text to avoid unknown tokens.",
+                text_token_ids.count(self.tokenizer.unk_token_id),
+                self.tokenizer.unk_token_id,
                 [t for t, id in zip(text_tokens_list, text_token_ids) if id == self.tokenizer.unk_token_id],
             )
-            print("     Consider updating the BPE model or modifying the text to avoid unknown tokens.")
 
         if verbose:
-            print("text_tokens_list:", text_tokens_list)
-            print("segments count:", segments_count)
-            print("max_text_tokens_per_segment:", max_text_tokens_per_segment)
-            print(*segments, sep="\n")
+            logger.debug("text_tokens_list: %s", text_tokens_list)
+            logger.debug("segments count: %d", segments_count)
+            logger.debug("max_text_tokens_per_segment: %d", max_text_tokens_per_segment)
+            for seg in segments:
+                logger.debug("%s", seg)
         generation_kwargs.pop("do_sample", None)
         top_p = generation_kwargs.pop("top_p", 0.8)
         top_k = generation_kwargs.pop("top_k", 30)
@@ -605,11 +640,11 @@ class IndexTTS2:
             text_tokens = self.tokenizer.convert_tokens_to_ids(sent)
             text_tokens = torch.tensor(text_tokens, dtype=torch.int32, device=self.device).unsqueeze(0)
             if verbose:
-                print(text_tokens)
-                print(f"text_tokens shape: {text_tokens.shape}, text_tokens type: {text_tokens.dtype}")
+                logger.debug("%s", text_tokens)
+                logger.debug("text_tokens shape: %s, text_tokens type: %s", text_tokens.shape, text_tokens.dtype)
                 # debug tokenizer
                 text_token_syms = self.tokenizer.convert_ids_to_tokens(text_tokens[0].tolist())
-                print("text_token_syms is same as segment tokens", text_token_syms == sent)
+                logger.debug("text_token_syms is same as segment tokens: %s", text_token_syms == sent)
 
             m_start_time = time.perf_counter()
             with torch.no_grad():
@@ -668,9 +703,9 @@ class IndexTTS2:
                 code_lens = torch.LongTensor(code_lens)
                 code_lens = code_lens.to(self.device)
                 if verbose:
-                    print(codes, type(codes))
-                    print(f"fix codes shape: {codes.shape}, codes type: {codes.dtype}")
-                    print(f"code len: {code_lens}")
+                    logger.debug("%s %s", codes, type(codes))
+                    logger.debug("fix codes shape: %s, codes type: %s", codes.shape, codes.dtype)
+                    logger.debug("code len: %s", code_lens)
 
                 m_start_time = time.perf_counter()
                 use_speed = torch.zeros(spk_cond_emb.size(0)).to(spk_cond_emb.device).long()
@@ -718,13 +753,13 @@ class IndexTTS2:
 
                     m_start_time = time.perf_counter()
                     wav = self.bigvgan(vc_target.float()).squeeze().unsqueeze(0)
-                    print(wav.shape)
+                    logger.debug("wav shape: %s", wav.shape)
                     bigvgan_time += time.perf_counter() - m_start_time
                     wav = wav.squeeze(1)
 
                 wav = torch.clamp(wav, -1.0, 1.0)
                 if verbose:
-                    print(f"wav shape: {wav.shape}", "min:", wav.min(), "max:", wav.max())
+                    logger.debug("wav shape: %s min: %s max: %s", wav.shape, wav.min(), wav.max())
                 wavs.append(wav.cpu())
                 if stream_return:
                     yield wav.cpu()
@@ -738,24 +773,24 @@ class IndexTTS2:
         wavs = self.insert_interval_silence(wavs, sampling_rate=sampling_rate, interval_silence=interval_silence)
         wav = torch.cat(wavs, dim=1)
         wav_length = wav.shape[-1] / sampling_rate
-        print(f">> gpt_gen_time: {gpt_gen_time:.2f} seconds")
-        print(f">> gpt_forward_time: {gpt_forward_time:.2f} seconds")
-        print(f">> s2mel_time: {s2mel_time:.2f} seconds")
-        print(f">> bigvgan_time: {bigvgan_time:.2f} seconds")
-        print(f">> Total inference time: {end_time - start_time:.2f} seconds")
-        print(f">> Generated audio length: {wav_length:.2f} seconds")
-        print(f">> RTF: {(end_time - start_time) / wav_length:.4f}")
+        logger.debug("gpt_gen_time: %.2f seconds", gpt_gen_time)
+        logger.debug("gpt_forward_time: %.2f seconds", gpt_forward_time)
+        logger.debug("s2mel_time: %.2f seconds", s2mel_time)
+        logger.debug("bigvgan_time: %.2f seconds", bigvgan_time)
+        logger.debug("Total inference time: %.2f seconds", end_time - start_time)
+        logger.debug("Generated audio length: %.2f seconds", wav_length)
+        logger.debug("RTF: %.4f", (end_time - start_time) / wav_length)
 
         # save audio
         wav = wav.cpu()  # to cpu
         if output_path:
             if os.path.isfile(output_path):
                 os.remove(output_path)
-                print(">> remove old wav file:", output_path)
+                logger.debug("remove old wav file: %s", output_path)
             if os.path.dirname(output_path) != "":
                 os.makedirs(os.path.dirname(output_path), exist_ok=True)
             torchaudio.save(output_path, wav.float(), sampling_rate, bits_per_sample=16)
-            print(">> wav file saved to:", output_path)
+            logger.info("wav file saved to: %s", output_path)
             if stream_return:
                 return None
             yield output_path

@@ -161,7 +161,6 @@ class MaskGCT_S2A(nn.Module):
         return torch.sin(t * np.pi / 2).to(t.device)
 
     def mask_layer(self, t):
-        # print(self.predict_layer_1)
         if self.mask_layer_schedule == "uniform":
             if self.predict_layer_1:
                 mask_layer = torch.randint(0, self.num_quantizer, (1,)).to(t.device)
@@ -199,7 +198,6 @@ class MaskGCT_S2A(nn.Module):
                 )
             weights = weights / weights.sum()
             mask_layer = torch.multinomial(weights, 1).to(t.device)
-        # print(mask_layer)
         new_t = t
 
         return mask_layer, new_t
