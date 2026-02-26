@@ -13,11 +13,6 @@ pip install indextts2-inference
 
 ### Optional extras
 
-**Spanish support** (nemo text processing):
-```bash
-pip install indextts2-inference[es]
-```
-
 **SageAttention** (alternative attention backend):
 ```bash
 pip install indextts2-inference[sage-attn]
@@ -64,7 +59,7 @@ tts = IndexTTS2(attn_backend="flash")
 
 ### Language selection
 
-By default the language is auto-detected between Chinese and English. For Spanish, set it explicitly:
+By default the language is auto-detected between Chinese and English. You can set it explicitly:
 
 ```python
 tts = IndexTTS2(language="es")

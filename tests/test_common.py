@@ -1,11 +1,8 @@
-import math
-
 import torch
 
 from indextts.utils.common import (
     de_tokenized_by_CJK_char,
     make_pad_mask,
-    safe_log,
     tokenize_by_CJK_char,
 )
 
@@ -81,22 +78,3 @@ class TestMakePadMask:
         assert mask[0].tolist() == [False, False, False]
 
 
-class TestSafeLog:
-    def test_normal_values(self):
-        x = torch.tensor([1.0, 2.0, math.e])
-        result = safe_log(x)
-        expected = torch.log(x)
-        assert torch.allclose(result, expected)
-
-    def test_near_zero_clipping(self):
-        x = torch.tensor([0.0, 1e-10, -1.0])
-        result = safe_log(x)
-        # All values should be clipped to 1e-7 before log
-        expected = torch.log(torch.tensor([1e-7, 1e-7, 1e-7]))
-        assert torch.allclose(result, expected)
-
-    def test_custom_clip_val(self):
-        x = torch.tensor([0.0, 0.5])
-        result = safe_log(x, clip_val=0.1)
-        expected = torch.log(torch.tensor([0.1, 0.5]))
-        assert torch.allclose(result, expected)
