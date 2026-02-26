@@ -1,6 +1,6 @@
 [project]
 name = "indextts2-inference"
-version = "2.1.0"
+version = "2.1.1"
 description = "IndexTTS2 inference library: zero-shot text-to-speech with emotional control"
 readme = "README.md"
 authors = [{ name = "Bilibili IndexTTS Team" }]
