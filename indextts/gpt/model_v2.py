@@ -4,14 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import transformers
-from transformers import GPT2Config, LogitsProcessorList
-from indextts.gpt.transformers_gpt2 import GPT2PreTrainedModel, GPT2Model
-
-# from transformers import GPT2Config, GPT2PreTrainedModel, LogitsProcessorList
+from transformers import GenerationMixin, GPT2Config, GPT2PreTrainedModel, LogitsProcessorList
 from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
-from transformers.utils.model_parallel_utils import (assert_device_map,
-                                                     get_device_map)
 
 from indextts.gpt.conformer_encoder import ConformerEncoder
 from indextts.gpt.perceiver import PerceiverResampler
@@ -42,7 +36,7 @@ class ResBlock(nn.Module):
         return F.relu(self.net(x) + x)
 
 
-class GPT2InferenceModel(GPT2PreTrainedModel):
+class GPT2InferenceModel(GPT2PreTrainedModel, GenerationMixin):
     def __init__(self, config, gpt, text_pos_emb, embeddings, norm, linear, kv_cache=False):
         super().__init__(config)
         # Note: the argument named `text_pos_emb` here actually represents the mel position embedding
@@ -52,31 +46,7 @@ class GPT2InferenceModel(GPT2PreTrainedModel):
         self.final_norm = norm
         self.lm_head = nn.Sequential(norm, linear)
         self.kv_cache = kv_cache
-
-        # Model parallel
-        self.model_parallel = False
-        self.device_map = None
         self.cached_mel_emb = None
-
-    def parallelize(self, device_map=None):
-        self.device_map = (
-            get_device_map(len(self.transformer.h), range(max(1, torch.cuda.device_count())))
-            if device_map is None
-            else device_map
-        )
-        assert_device_map(self.device_map, len(self.transformer.h))
-        self.transformer.parallelize(self.device_map)
-        self.lm_head = self.lm_head.to(self.transformer.first_device)
-        self.model_parallel = True
-
-    def deparallelize(self):
-        self.transformer.deparallelize()
-        self.transformer = self.transformer.to("cpu")
-        self.lm_head = self.lm_head.to("cpu")
-        self.model_parallel = False
-        torch.cuda.empty_cache()
-        if torch.backends.mps.is_available():
-            torch.mps.empty_cache()
 
     def get_output_embeddings(self):
         return self.lm_head
@@ -91,8 +61,14 @@ class GPT2InferenceModel(GPT2PreTrainedModel):
         token_type_ids = kwargs.get("token_type_ids", None)  # usually None
         if not self.kv_cache:
             past_key_values = None
+
+        # Check if past_key_values actually contains cached states.
+        # In transformers 5.x, generate() pre-initializes an empty DynamicCache
+        # which is truthy even when empty, so we check get_seq_length() instead.
+        has_past = past_key_values is not None and past_key_values.get_seq_length() > 0
+
         # only last token for inputs_ids if past is defined in kwargs
-        if past_key_values:
+        if has_past:
             input_ids = input_ids[:, -1].unsqueeze(-1)
             if token_type_ids is not None:
                 token_type_ids = token_type_ids[:, -1].unsqueeze(-1)
@@ -104,7 +80,7 @@ class GPT2InferenceModel(GPT2PreTrainedModel):
             # create position_ids on the fly for batch generation
             position_ids = attention_mask.long().cumsum(-1) - 1
             position_ids.masked_fill_(attention_mask == 0, 0)
-            if past_key_values:
+            if has_past:
                 position_ids = position_ids[:, -1].unsqueeze(-1)
         else:
             position_ids = None
@@ -173,15 +149,6 @@ class GPT2InferenceModel(GPT2PreTrainedModel):
             return_dict=return_dict,
         )
         hidden_states = transformer_outputs[0]
-
-        # Set device for model parallelism
-        if self.model_parallel:
-            if torch.backends.mps.is_available():
-                self.to(self.transformer.first_device)
-            else:
-                torch.cuda.set_device(self.transformer.first_device)
-            hidden_states = hidden_states.to(self.lm_head.weight.device)
-
         lm_logits = self.lm_head(hidden_states)
 
         if not return_dict:
@@ -196,20 +163,6 @@ class GPT2InferenceModel(GPT2PreTrainedModel):
             cross_attentions=transformer_outputs.cross_attentions,
         )
 
-    @staticmethod
-    def _reorder_cache(past, beam_idx):
-        """
-        This function is used to re-order the :obj:`past_key_values` cache if
-        :meth:`~transformers.PreTrainedModel.beam_search` or :meth:`~transformers.PreTrainedModel.beam_sample` is
-        called. This is required to match :obj:`past_key_values` with the correct beam_idx at every generation step.
-        """
-        return tuple(
-            tuple(
-                past_state.index_select(0, beam_idx.to(past_state.device))
-                for past_state in layer_past
-            )
-            for layer_past in past
-        )
 
 
 class ConditioningEncoder(nn.Module):
@@ -262,7 +215,6 @@ def build_hf_gpt_transformer(layers, model_dim, heads, max_mel_seq_len, max_text
     from transformers import GPT2Config, GPT2Model
     gpt_config = GPT2Config(vocab_size=256,  # Unused.
                             n_positions=max_mel_seq_len + max_text_seq_len,
-                            n_ctx=max_mel_seq_len + max_text_seq_len,
                             n_embd=model_dim,
                             n_layer=layers,
                             n_head=heads,
@@ -417,7 +369,6 @@ class UnifiedVoice(nn.Module):
         gpt_config = GPT2Config(
             vocab_size=self.number_mel_codes,
             n_positions=seq_length,
-            n_ctx=seq_length,
             n_embd=self.model_dim,
             n_layer=self.layers,
             n_head=self.heads,
