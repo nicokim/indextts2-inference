@@ -3,7 +3,8 @@
   "packages": {
     ".": {
       "release-type": "python",
-      "package-name": "index-tts-inference"
+      "package-name": "index-tts-inference",
+      "include-component-in-tag": false
     }
   }
 }
