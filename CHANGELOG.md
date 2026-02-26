@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.0](https://github.com/nicokim/indextts2-inference/compare/v2.0.2...v2.1.0) (2026-02-26)
+
+
+### Features
+
+* unify text normalization on nemo-text-processing ([#10](https://github.com/nicokim/indextts2-inference/issues/10)) ([79425bd](https://github.com/nicokim/indextts2-inference/commit/79425bdc75e24ecc0996df626f62c8502eeffc9e))
+
 ## [2.0.2](https://github.com/nicokim/indextts2-inference/compare/v2.0.1...v2.0.2) (2026-02-26)
 
 
